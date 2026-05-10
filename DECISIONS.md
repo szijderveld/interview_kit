@@ -1,0 +1,241 @@
+# Decisions
+
+Running log of non-obvious choices. `/next-step` reads this before starting and
+appends entries when a step makes a notable choice.
+
+## Format
+
+```
+## Step N — <step title>
+
+- **Decision:** <one sentence>
+- **Why:** <one sentence>
+- **Affects:** <which future steps or files this constrains>
+```
+
+## What to log here vs. not
+
+Log:
+- Choices between two reasonable alternatives where the loser is non-obvious.
+- Deviations from PLAN.md or SCOPE.md, with justification.
+- Version pins or library substitutions forced by API drift.
+- Internal abstractions a later step needs to honor.
+
+Don't log:
+- Anything obvious from reading the code.
+- Routine refactors.
+- Bug fixes within the same step.
+
+---
+
+## Step 0 — Pre-build resolutions (locked in before Step 1)
+
+These resolve the open questions in SCOPE and the architectural risks raised in
+plan review. They are binding for all subsequent steps.
+
+### D1. LiveKit Agents framework — adopt, do not reimplement
+
+- **Decision:** v1 wraps `livekit-agents` `AgentSession` as the voice runtime
+  rather than building a `VoiceTransport` protocol with a hand-rolled audio
+  loop.
+- **Why:** AgentSession owns VAD (Silero), turn-detection, interruption,
+  backchannel filtering, and streaming STT/TTS plumbing — reimplementing them
+  is hundreds of lines of fragile code we cannot test as well as the framework
+  is already tested.
+- **Affects:** removes `VoiceTransport` protocol from the public API; replaces
+  Step 13's `LiveKitVoiceTransport` work with an `Engine.entrypoint(ctx)`
+  function the consumer registers with their `AgentServer`. The CLI voice
+  transport is dropped entirely (see D9).
+
+### D2. Two LLM calls per turn — eval (Haiku) then compose-stream (Sonnet)
+
+- **Decision:** each agent turn is two sequential Anthropic calls:
+  1. `evaluate_turn` — Claude Haiku 4.5 with `tool_choice` forced to a single
+     tool returning structured JSON: `{active_goal_status,
+     redundant_goal_ids, interesting_tangent, next_action}`.
+  2. `compose_utterance` — Claude Sonnet 4.6 with plain text streaming
+     (no tools), driven by the eval result and engine state.
+- **Why:** the original plan's merged "compose+evaluate" call promised
+  streaming TTS *and* structured tool-use output from one call. In practice
+  forcing a specific tool suppresses preamble text and breaks streaming-to-TTS;
+  text-then-tool ordering is fragile across model versions. Splitting into
+  two calls costs ~200–300 ms but is robust, testable, and eliminates the
+  contradiction.
+- **Affects:** `LLMClient` protocol exposes `evaluate_turn` and
+  `compose_utterance` (the latter as `AsyncIterator[str]`) plus
+  `derive_extract`. The merged `compose_and_evaluate` from earlier drafts is
+  removed. Replaces the previous `select_next_goal(redundancy_judge=...)`
+  callable: redundancy is decided inside `evaluate_turn` and surfaced in its
+  output, so selection becomes a pure function over `GoalStatus`.
+
+### D3. Async-everywhere protocols
+
+- **Decision:** every `ConversationStore` and `EventSink` method is `async
+  def`. Engine methods that talk to either are async too
+  (`create_conversation`, `provision_session`, `cancel_session`,
+  `get_session_status`, `get_transcript`, `get_extract`,
+  `reprovision_session`).
+- **Why:** the engine is async; the original sync-store-with-asyncio.Lock
+  design was internally inconsistent (you can't `await` a lock from a sync
+  method). Async-everywhere makes the SQLite, Postgres, and webhook
+  implementations natural, and the in-memory impl just uses `asyncio.Lock`.
+- **Affects:** SCOPE.md → Public API → Consumer-implemented protocols
+  (rewritten); Engine signatures (rewritten); test files use `await`.
+
+### D4. Cancellation = state flag + room teardown
+
+- **Decision:** `cancel_session` (a) writes `ABANDONED` to the store and
+  emits `abandoned`, then (b) calls the LiveKit room-delete API to disconnect
+  participants. The running `AgentSession` observes the room close and exits
+  cleanly. For simulator mode the loop checks state at each iteration
+  boundary as before.
+- **Why:** the original "check state at iteration boundary" plan had no way
+  to interrupt a respondent mid-monologue in voice mode. Letting LiveKit do
+  the disconnect makes cancellation effectively immediate without coupling
+  the engine to the audio loop's internals.
+- **Affects:** Step 5 (cancel_session implementation), Step 13 (entrypoint
+  must handle clean shutdown on room close).
+
+### D5. Mid-session goal-status events suppressed
+
+- **Decision:** the engine does NOT emit `goal_status_changed` events
+  during the loop. The canonical statuses come from `derive_extract` at
+  completion; the `completed` event payload includes the per-goal status
+  diff. Live progress visibility for dashboards comes from `Turn` count and
+  active-goal-id only.
+- **Why:** the original design allowed live "best guess" status changes that
+  could be revised by the final extract pass — operators would see a goal
+  change from `meets` to `partial` after completion, which is a confusing UX.
+  v1 trades real-time goal status for consistency.
+- **Affects:** `SessionEvent` type still lists `goal_status_changed` in its
+  literal union, but it is only emitted from `derive_extract`. Step 8 must
+  not emit it.
+
+### D6. `Background.relevant_context` over-length raises, never silently truncates
+
+- **Decision:** `relevant_context` longer than 1000 chars raises a
+  `pydantic.ValidationError`. No `warnings.warn`. No silent truncation.
+- **Why:** silent truncation via `warnings` is invisible in production
+  logging and produces non-deterministic prompts. Forcing the consumer to
+  decide is the correct boundary.
+- **Affects:** Step 2 validator implementation and tests.
+
+### D7. Phrasing validator is lightweight: word count + question count, regen-once
+
+- **Decision:** `validate_voice_phrasing` checks `len(words) <= 25` and
+  `text.count("?") <= 1`. On failure, the engine regenerates the compose
+  call once with the failure surfaced in the prompt. If the second attempt
+  also fails, the engine speaks the utterance verbatim (does not split).
+- **Why:** the keyword-based enumeration detector misses phrasings like
+  "to start with"; the programmatic splitter produces ungrammatical
+  fragments. Trusting Sonnet's prompt discipline plus a hard word-count
+  guard is sufficient for v1 and removes ~80 lines of brittle code.
+- **Affects:** Step 7 deliverables shrink; no `split_compound_utterance`
+  function.
+
+### D8. Drop CLI voice transport
+
+- **Decision:** v1 ships two examples — `examples/simulated.py` (text-only,
+  no API keys) and `examples/local_voice.py` (LiveKit + Anthropic +
+  Deepgram + Cartesia). No `examples/local_cli.py`.
+- **Why:** the CLI transport tests neither the real voice path nor anything
+  the simulator doesn't already test, and adding it requires a
+  `VoiceTransport` protocol we no longer want (see D1). Lightweight first
+  version.
+- **Affects:** removes Step 12's CLI deliverable; Step 12 becomes solely
+  about `AnthropicLLMClient`. Step 13 is the only voice-bringup step.
+
+### D9. Token policy and resume window
+
+- **Decision:** `SessionCredentials.expires_at` defaults to 24 hours.
+  Refresh is explicit — the consumer calls `reprovision_session` if a token
+  expires. Resume of an interrupted session is permitted as long as the
+  underlying `Session` state is `IN_PROGRESS` or `ABANDONED` and not older
+  than 24 h since last update.
+- **Why:** automatic token refresh requires a long-lived background task
+  the engine doesn't own; consumer-driven refresh is simpler and matches
+  how operator dashboards already poll status. The 24 h window matches
+  the default token lifetime.
+- **Affects:** `Engine.provision_session` and `reprovision_session`
+  implementations; resume logic in `run_loop`.
+
+### D10. Conversation snapshot on session start
+
+- **Decision:** `start_session` (and `simulate_session`) snapshot the
+  Conversation into a `Session.conversation_snapshot` field at first
+  invocation. Subsequent edits to the underlying Conversation do not affect
+  in-flight or completed Sessions.
+- **Why:** prevents mid-call brief drift if the operator edits goals while
+  a session is live. Resolves the resumability fine-print from SCOPE Open
+  Question 2.
+- **Affects:** `Session` gets a `conversation_snapshot: Conversation` field;
+  resume/simulate logic reads from the snapshot, not from
+  `store.load_conversation` (which reflects the current edited version).
+
+### D11. Per-turn LLM telemetry on `turn_recorded`
+
+- **Decision:** the `turn_recorded` event payload includes
+  `{tokens_in, tokens_out, cache_read_tokens, cache_write_tokens,
+  llm_latency_ms}` for the agent's compose call. Eval-call usage is
+  aggregated separately on the `completed` event.
+- **Why:** voice-agent operators routinely need cost/latency telemetry to
+  tune prompts and pick models. Plumbing it through events now is cheap
+  and avoids a second observability sweep later.
+- **Affects:** `SessionEvent.payload` schema for `turn_recorded`; the
+  Anthropic client surfaces usage on each call.
+
+### D12. Latency targets revised
+
+- **Decision:** target end-of-respondent-utterance to start-of-agent-audio
+  is 1.0–1.5 s typical, 2.5–3.5 s worst-case. Components budgeted as:
+  Deepgram endpoint detection ~300 ms, evaluate (Haiku) ~200–400 ms,
+  compose first-token (Sonnet) ~150–300 ms, Cartesia first audio ~150–300 ms.
+- **Why:** the original 1.5 s typical target assumed a one-call merged
+  pipeline that we no longer use. Two-call honesty plus Cartesia/Deepgram
+  realistic numbers gives the revised band.
+- **Affects:** SCOPE.md latency strategy section; no implementation
+  changes, just documentation accuracy.
+
+### D13. Loop-time goal-status hint table — in-memory, runner-owned
+
+- **Decision:** the runner maintains an in-memory `dict[str, GoalStatus]`
+  (the "goal_status_table") updated on every `EvalResult`. This is the
+  loop-time hint authority used by `select_next_goal` and by Step 11 to
+  diff against the canonical Extract. It is NOT persisted as canonical;
+  durable hints live only on `Turn.addressed_goal_ids`.
+- **Why:** the original plan said "emit goal_status_changed for goals
+  that differ from loop-time hints" without specifying where those hints
+  live. Without an explicit table, the runner has no clean way to
+  compute the diff. Making it an explicit runner field makes the diff a
+  three-line computation in Step 11.
+- **Affects:** Step 8 runner introduces the field; Step 11 reads it to
+  compute the diff; tests assert events fire only for diffed goals.
+
+### D14. Silence handling delegated to AgentSession
+
+- **Decision:** v1 does not implement custom silence-nudge / 15s-timeout
+  logic. `livekit-agents` `AgentSession` includes VAD-based turn
+  detection plus user-away handling; prolonged silence surfaces as a
+  framework-level disconnect, which the engine treats the same as a
+  respondent disconnect.
+- **Why:** writing custom silence detection inside our `chat()`
+  implementation fights the framework's turn-detection, doubles
+  bookkeeping, and adds an edge case we can't easily test. AgentSession's
+  defaults are acceptable for v1; revisit if user feedback shows the
+  defaults are too eager or too patient.
+- **Affects:** SCOPE.md Unhappy paths "Silence" entry rewritten;
+  Step 9's deliverables don't include a custom silence path.
+
+### D15. Anthropic tool input_schema derivation helper
+
+- **Decision:** Anthropic tool input_schema is generated from Pydantic
+  models via a small helper that strips Pydantic-specific keys
+  (`title`, `$defs`, nested `title`) and inlines `$defs`. Lives in
+  `src/interviewer/llm/schemas.py`.
+- **Why:** `BaseModel.model_json_schema()` includes keys Anthropic
+  rejects (and references `$defs` instead of inlining). Without a
+  dedicated helper, the Anthropic client would either fail at runtime
+  with cryptic schema errors or open up to "any" tool_choice and lose
+  structure guarantees. One helper, tested once, used by both
+  `evaluate` and `extract` tools.
+- **Affects:** Step 12 adds `llm/schemas.py` and a test for it.
