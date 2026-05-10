@@ -276,7 +276,7 @@ type, and the LLM I/O types (`TurnContext`, `EvalResult`).
 
 ### Step 4: Async protocols + in-memory reference implementations
 
-- [ ] complete
+- [x] complete
 
 **Goal:** All consumer-facing `Protocol`s defined as **async**, plus
 minimal in-memory implementations of `ConversationStore` and `EventSink`.
