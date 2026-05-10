@@ -228,7 +228,7 @@ Pydantic models with full validation.
 
 ### Step 3: Runtime types, state enums, events, LLM I/O types
 
-- [ ] complete
+- [x] complete
 
 **Goal:** Every runtime type from SCOPE.md, plus the state enum, event
 type, and the LLM I/O types (`TurnContext`, `EvalResult`).
