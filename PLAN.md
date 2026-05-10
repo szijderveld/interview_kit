@@ -377,7 +377,7 @@ without LiveKit by accepting `livekit=None` (returns dummy creds).
 
 ### Step 6: Goal selection logic
 
-- [ ] complete
+- [x] complete
 
 **Goal:** `select_next_goal` as a **pure function** with no LLM callable.
 Honors default order and dependencies. Redundancy is applied via
