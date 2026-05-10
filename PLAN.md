@@ -100,7 +100,7 @@ DECISIONS.md D8.
 
 ### Step 0: Verify decisions are locked (verification-only)
 
-- [ ] complete
+- [x] complete
 
 **Goal:** Confirm DECISIONS.md and SCOPE.md are in their pre-build
 resolved state before any code is written. **This step produces no diff
@@ -135,7 +135,7 @@ mismatch in DECISIONS.md or SCOPE.md before proceeding to Step 1.
 
 ### Step 1: Bootstrap project
 
-- [ ] complete
+- [x] complete
 
 **Goal:** Empty Python package with build system, test runner, linter, and
 type checker configured and green.

@@ -239,3 +239,20 @@ plan review. They are binding for all subsequent steps.
   structure guarantees. One helper, tested once, used by both
   `evaluate` and `extract` tools.
 - **Affects:** Step 12 adds `llm/schemas.py` and a test for it.
+
+---
+
+## Step 1 — bootstrap project
+
+- **Decision:** `[tool.pytest.ini_options]` includes `pythonpath = ["src"]`.
+- **Why:** the project lives under `~/Documents/`, where macOS auto-sets
+  the `hidden` file flag on filenames starting with `_`. CPython 3.12's
+  `site.py` skips hidden `.pth` files, so the editable-install pth that
+  `uv sync` writes (`_editable_impl_interviewer.pth`) gets ignored and
+  `import interviewer` fails. Setting pytest's `pythonpath` makes the
+  test runner add `src/` directly, bypassing the editable-install path
+  for the suite.
+- **Affects:** all subsequent test runs work regardless of the macOS
+  hidden-flag state; if a future tool (other than pytest / mypy)
+  needs the package importable from the venv, run
+  `chflags -R nohidden .venv` once after `uv sync`.
