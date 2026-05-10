@@ -422,7 +422,7 @@ based on `EvalResult.redundant_goal_ids`).
 
 ### Step 7: Voice-phrasing validator
 
-- [ ] complete
+- [x] complete
 
 **Goal:** Pure function that checks an utterance for word-count and
 question-count, returning either OK or a list of failures. **No keyword
