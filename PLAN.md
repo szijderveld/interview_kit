@@ -179,7 +179,7 @@ type checker configured and green.
 
 ### Step 2: Configuration types
 
-- [ ] complete
+- [x] complete
 
 **Goal:** `Persona`, `Background`, `Goal`, `Conversation` as immutable
 Pydantic models with full validation.
