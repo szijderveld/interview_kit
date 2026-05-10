@@ -1,0 +1,97 @@
+"""Scripted LLM client for tests and the no-API-keys example.
+
+``FakeLLMClient`` is deterministic: ``evaluate_turn`` pops from an
+``EvalResult`` queue, ``compose_utterance`` pops from an utterance queue
+and yields its text in 1–3 chunks (simulating streaming), and
+``derive_extract`` maps every ``Turn.addressed_goal_ids`` reference to
+``GoalStatus.evidence_turn_indices`` with ``status="meets"`` where there
+is any evidence and ``"pending"`` otherwise.
+
+The runner overrides ``Extract.session_id`` and ``Extract.completed_at``
+after this client returns (see DECISIONS Step 8) — this client only has
+to produce a structurally valid Extract using ``conv.id`` as a
+placeholder.
+"""
+
+from __future__ import annotations
+
+from collections import deque
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+
+from interviewer.types.config import Conversation
+from interviewer.types.runtime import (
+    EvalResult,
+    Extract,
+    Finding,
+    GoalStatus,
+    GoalStatusValue,
+    Turn,
+    TurnContext,
+)
+
+
+class FakeLLMClient:
+    """Deterministic ``LLMClient`` implementation for tests."""
+
+    def __init__(
+        self,
+        *,
+        eval_results: list[EvalResult] | None = None,
+        utterances: list[str] | None = None,
+        findings: list[Finding] | None = None,
+    ) -> None:
+        self._eval_results: deque[EvalResult] = deque(eval_results or [])
+        self._utterances: deque[str] = deque(utterances or [])
+        self._findings: list[Finding] = list(findings or [])
+
+    async def evaluate_turn(self, ctx: TurnContext) -> EvalResult:
+        if not self._eval_results:
+            raise RuntimeError("FakeLLMClient: evaluate_turn queue exhausted")
+        return self._eval_results.popleft()
+
+    def compose_utterance(
+        self, ctx: TurnContext, eval_result: EvalResult
+    ) -> AsyncIterator[str]:
+        if not self._utterances:
+            raise RuntimeError("FakeLLMClient: compose_utterance queue exhausted")
+        text = self._utterances.popleft()
+        return _stream_chunks(text)
+
+    async def derive_extract(
+        self, transcript: list[Turn], conv: Conversation
+    ) -> Extract:
+        goal_statuses: list[GoalStatus] = []
+        for goal in conv.goals:
+            evidence = [t.index for t in transcript if goal.id in t.addressed_goal_ids]
+            status: GoalStatusValue = "meets" if evidence else "pending"
+            goal_statuses.append(
+                GoalStatus(
+                    goal_id=goal.id,
+                    status=status,
+                    evidence_turn_indices=evidence,
+                    retries_used=0,
+                    rationale="fake-llm: addressed_goal_ids mapping",
+                )
+            )
+        # session_id and completed_at are runner-owned; conv.id is a valid
+        # non-empty placeholder so model validation passes.
+        return Extract(
+            session_id=conv.id,
+            conversation_id=conv.id,
+            goal_statuses=goal_statuses,
+            unprompted_findings=list(self._findings),
+            full_transcript=transcript,
+            completed_at=datetime.now(UTC),
+        )
+
+
+async def _stream_chunks(text: str) -> AsyncIterator[str]:
+    """Yield ``text`` in 1–3 chunks to simulate streaming."""
+    if len(text) <= 20:
+        yield text
+        return
+    third = len(text) // 3
+    yield text[:third]
+    yield text[third : third * 2]
+    yield text[third * 2 :]

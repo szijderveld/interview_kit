@@ -459,7 +459,7 @@ detection, no splitter** (per DECISIONS.md D7).
 
 ### Step 8: Happy-path simulator loop + simulated example
 
-- [ ] complete
+- [x] complete
 
 **Goal:** `Engine.simulate_session` runs end-to-end against a
 `RespondentSimulator` and a scripted `FakeLLMClient`, producing a complete

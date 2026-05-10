@@ -357,7 +357,5 @@ async def test_entrypoint_is_stub() -> None:
         await engine.entrypoint(object())
 
 
-async def test_simulate_session_is_stub() -> None:
-    engine = _engine()
-    with pytest.raises(NotImplementedError):
-        await engine.simulate_session("conv-x", object())
+# simulate_session is implemented in Step 8 — end-to-end coverage lives in
+# tests/loop/test_runner_happy_path.py.

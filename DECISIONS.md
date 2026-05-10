@@ -273,6 +273,40 @@ plan review. They are binding for all subsequent steps.
   call out that cancel/reprovision require the session to be
   non-terminal.
 
+## Step 8 — Extract.session_id and completed_at are runner-owned
+
+- **Decision:** the runner overwrites ``Extract.session_id`` and
+  ``Extract.completed_at`` via ``model_copy`` after ``LLMClient.derive_extract``
+  returns; LLM implementations fill these with a non-empty placeholder
+  (FakeLLMClient uses ``conv.id``) so model validation passes.
+- **Why:** the ``derive_extract(transcript, conv)`` signature in SCOPE
+  has no session handle, but ``Extract.session_id`` is required and
+  has ``min_length=1``. Forcing the LLM to learn the session id would
+  bloat the prompt and couple model state to session lifecycle;
+  letting the runner own the two metadata fields keeps the LLM
+  contract narrow.
+- **Affects:** Step 12 (AnthropicLLMClient) follows the same pattern.
+  Step 11's diff path reads ``extract.goal_statuses`` only — these
+  two fields are not part of the canonical-vs-hint comparison.
+
+## Step 8 — Loop ordering: eval-then-select, not select-then-eval
+
+- **Decision:** the runner evaluates the prior respondent turn against
+  ``last_active`` first, applies the result to the goal_status_table,
+  and only then calls ``select_next_goal`` for the new iteration's
+  active goal. The very first main-loop iteration skips eval.
+- **Why:** SCOPE's flow lists ``select_next_goal`` before
+  ``evaluate_turn`` (3a → 3b), but eval needs to judge the goal that
+  was active when the prior respondent answer was given — not the
+  newly-selected one. Re-ordering preserves SCOPE's semantic intent
+  ("apply eval, then pick next goal from the updated table") without
+  the ambiguity of evaluating against a freshly-selected goal that
+  was not yet probed.
+- **Affects:** Step 9's unhappy paths (retry / drill / refusal) all
+  read ``last_active`` for eval context and rely on this ordering.
+  Step 13's voice-mode entrypoint mirrors the same pattern inside
+  ``InterviewerLLM.chat()``.
+
 ## Step 5 — goals_resolved best-effort
 
 - **Decision:** mid-session `SessionStatus.goals_resolved` counts

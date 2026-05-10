@@ -17,7 +17,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from interviewer.livekit_config import LiveKitConfig
-from interviewer.protocols import ConversationStore, EventSink, LLMClient
+from interviewer.protocols import (
+    ConversationStore,
+    EventSink,
+    LLMClient,
+    RespondentSimulator,
+)
 from interviewer.types.config import Background, Conversation, Goal, Persona
 from interviewer.types.events import SessionEvent
 from interviewer.types.runtime import (
@@ -205,10 +210,20 @@ class Engine:
         raise NotImplementedError("Engine.entrypoint arrives in Step 13")
 
     async def simulate_session(
-        self, conversation_id: str, simulator: object
+        self, conversation_id: str, simulator: RespondentSimulator
     ) -> Extract:
-        """Run the loop against a synthetic respondent. Implemented in Step 8."""
-        raise NotImplementedError("Engine.simulate_session arrives in Step 8")
+        """Run the loop against a synthetic respondent — no voice room.
+
+        Provisions a fresh Session (emits ``session_provisioned``), then
+        drives ``run_loop`` to completion. Useful for rehearsing a
+        Conversation against ``ScriptedSimulator``/``TerseEvasiveSimulator``
+        et al. before sending the link to a real human.
+        """
+        # Local import to keep engine ↔ runner module-load acyclic.
+        from interviewer.loop.runner import run_loop
+
+        session, _creds = await self.provision_session(conversation_id)
+        return await run_loop(self, session.id, simulator)
 
     # ---- internals -------------------------------------------------------
 
