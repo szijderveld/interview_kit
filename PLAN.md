@@ -325,7 +325,7 @@ minimal in-memory implementations of `ConversationStore` and `EventSink`.
 
 ### Step 5: Engine — non-loop async methods
 
-- [ ] complete
+- [x] complete
 
 **Goal:** `Engine` class with all non-loop async methods working end-to-end
 against the in-memory store and sink. `entrypoint` and `simulate_session`

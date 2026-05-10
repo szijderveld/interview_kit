@@ -256,3 +256,33 @@ plan review. They are binding for all subsequent steps.
   hidden-flag state; if a future tool (other than pytest / mypy)
   needs the package importable from the venv, run
   `chflags -R nohidden .venv` once after `uv sync`.
+
+---
+
+## Step 5 — engine methods
+
+- **Decision:** `cancel_session` and `reprovision_session` raise
+  `ValueError` when the session is in any terminal state (COMPLETED,
+  ABANDONED, FAILED); they are NOT idempotent.
+- **Why:** PLAN Step 5 lists double-cancel and "reprovision on
+  completed session" as error cases. Surfacing them as `ValueError`
+  forces consumer apps to model session lifecycle explicitly instead
+  of silently no-ooping over stale UI state.
+- **Affects:** Step 13's voice-mode cancel path (room-teardown) must
+  preserve the same guard; consumer integration in Step 16 docs must
+  call out that cancel/reprovision require the session to be
+  non-terminal.
+
+## Step 5 — goals_resolved best-effort
+
+- **Decision:** mid-session `SessionStatus.goals_resolved` counts
+  distinct goal ids appearing in any `Turn.addressed_goal_ids` until
+  an Extract exists; once `Extract` is saved, the count comes from
+  non-pending `GoalStatus` entries.
+- **Why:** SCOPE defines `goals_resolved` as "count of goals not in
+  {pending}" but no canonical per-goal status exists mid-session
+  (D5, D13). The live-hint count from turns is the best available
+  proxy and is the same data the loop will populate.
+- **Affects:** Step 11 (which finalizes per-goal statuses) does not
+  need to retrofit dashboard math — the same accessor flips to the
+  canonical Extract count automatically once `save_extract` is called.
