@@ -1312,7 +1312,7 @@ adoption.
 
 ### Step 15: Integration test suite
 
-- [ ] complete
+- [x] complete
 
 **Goal:** End-to-end tests covering realistic combinations of Conversation
 configs and simulator personas. Catches regressions across loop, extract,

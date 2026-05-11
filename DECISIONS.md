@@ -590,6 +590,46 @@ plan review. They are binding for all subsequent steps.
   `httpx.AsyncClient` (with a retry transport, custom timeout, etc.)
   via the `client=` kwarg. The sink stays minimal.
 
+## Step 15 — gave_up scenario uses scripted IDK answers, not `TerseEvasiveSimulator`
+
+- **Decision:** the "some gave_up statuses" integration test scripts
+  two consecutive IDK replies on one goal via `ScriptedSimulator`; the
+  separate `TerseEvasiveSimulator` test only asserts well-formed
+  completion. PLAN.md Step 15 listed a single scenario combining both
+  ("Same Conversation against `TerseEvasiveSimulator` — expect some
+  `gave_up` statuses").
+- **Why:** the production `TerseEvasiveSimulator` cycles through five
+  responses with the two IDK phrases (`"Couldn't say."`, `"Not sure."`)
+  non-adjacent. The runner's refusal heuristic (Step 9) requires *two
+  consecutive* IDK replies on the same goal to mark `gave_up`; with the
+  cycle's spacing, two consecutive IDKs never naturally occur, so
+  vanilla `TerseEvasiveSimulator` cannot produce the path. Splitting the
+  scenarios is more honest than mutating production simulator state or
+  side-channeling a `force_gave_up` flag into `FakeLLMClient` just for
+  one test.
+- **Affects:** Step 16's documentation should treat `TerseEvasiveSimulator`
+  as "rough but well-formed answers", not "gave_up generator". If a
+  future step needs a built-in `RefusalSimulator` it should be added
+  explicitly rather than retrofitted onto `TerseEvasiveSimulator`.
+
+## Step 15 — refusal-path canonical extract reports `meets`, not `gave_up`
+
+- **Decision:** the "refusal → gave_up" integration test asserts the
+  Step 11 diff path (a `goal_status_changed` event with
+  `from_status="gave_up"`) instead of the canonical
+  `Extract.goal_statuses` showing `gave_up`.
+- **Why:** `FakeLLMClient.derive_extract` reads canonical status from
+  `Turn.addressed_goal_ids` only (no hint-table awareness; Step 11). A
+  goal that hit the refusal heuristic still has its probe + deflection
+  turns tagged with its id, so FakeLLM reports it as `meets`. The
+  runner's loop-time hint table holds `gave_up` for that goal, which
+  surfaces in the diff event Step 11 emits before `completed`. The
+  integration test asserts at the event layer where the gave_up state
+  is observable.
+- **Affects:** integration tests against the real `AnthropicLLMClient`
+  (out of scope per Step 15 constraints) would see `gave_up` in the
+  canonical Extract directly; the assertion shape would change.
+
 ## Step 13 — `_finalize_extract` lives in `voice/livekit_entry.py`, not on `Engine`
 
 - **Decision:** the canonical-extract pass for the voice path is a
