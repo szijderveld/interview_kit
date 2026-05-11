@@ -1,21 +1,34 @@
-"""Run an interviewer session against a synthetic respondent — no API keys.
+"""Run an interviewer session against a synthetic respondent — no voice.
 
-Builds a small Conversation, runs ``Engine.simulate_session`` against
-``FakeLLMClient`` + ``ScriptedSimulator``, prints transcript + extract.
+Default mode uses ``FakeLLMClient`` + ``ScriptedSimulator`` — no API
+keys, deterministic transcript.
+
+``--use-anthropic`` swaps in ``AnthropicLLMClient`` and a cycling
+``RamblyKnowledgeableSimulator``. Requires ``ANTHROPIC_API_KEY``. Cost is
+~10-30 cents per run; acceptance is "completes without crashing and the
+extract has the right shape" — the transcript may be noisier than the
+deterministic fake.
 
 Usage:
     uv run python examples/simulated.py
+    ANTHROPIC_API_KEY=sk-... uv run python examples/simulated.py --use-anthropic
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
+import os
 
 from interviewer import Background, Engine, EvalResult, Goal, Persona
+from interviewer.protocols import LLMClient, RespondentSimulator
 from interviewer.sinks.memory import InMemoryEventSink
 from interviewer.stores.memory import InMemoryConversationStore
 from interviewer.testing.fake_llm import FakeLLMClient
-from interviewer.testing.simulators import ScriptedSimulator
+from interviewer.testing.simulators import (
+    RamblyKnowledgeableSimulator,
+    ScriptedSimulator,
+)
 
 
 def _eval_results() -> list[EvalResult]:
@@ -56,10 +69,33 @@ def _respondent_responses() -> list[str]:
     ]
 
 
-async def main() -> None:
+def _build_llm_and_simulator(use_anthropic: bool) -> tuple[LLMClient, RespondentSimulator]:
+    if use_anthropic:
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise SystemExit(
+                "ANTHROPIC_API_KEY is required when --use-anthropic is set."
+            )
+        # Local import: AnthropicLLMClient pulls in the SDK only when
+        # this flag is actually requested.
+        from interviewer.llm.anthropic import AnthropicLLMClient
+
+        llm: LLMClient = AnthropicLLMClient(api_key=api_key)
+        # A cycling simulator can't exhaust its response queue if the
+        # real Anthropic model decides to drill or retry.
+        sim: RespondentSimulator = RamblyKnowledgeableSimulator()
+    else:
+        llm = FakeLLMClient(
+            eval_results=_eval_results(), utterances=_agent_utterances()
+        )
+        sim = ScriptedSimulator(_respondent_responses())
+    return llm, sim
+
+
+async def main(use_anthropic: bool) -> None:
     store = InMemoryConversationStore()
     events = InMemoryEventSink()
-    llm = FakeLLMClient(eval_results=_eval_results(), utterances=_agent_utterances())
+    llm, simulator = _build_llm_and_simulator(use_anthropic)
     engine = Engine(store=store, events=events, llm=llm)
 
     conv = await engine.create_conversation(
@@ -85,7 +121,6 @@ async def main() -> None:
         closing="That's everything I needed. Appreciate your time.",
     )
 
-    simulator = ScriptedSimulator(_respondent_responses())
     extract = await engine.simulate_session(conv.id, simulator)
 
     print("--- TRANSCRIPT ---")
@@ -101,4 +136,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0] if __doc__ else None)
+    parser.add_argument(
+        "--use-anthropic",
+        action="store_true",
+        help="Swap FakeLLMClient for AnthropicLLMClient (requires ANTHROPIC_API_KEY).",
+    )
+    args = parser.parse_args()
+    asyncio.run(main(args.use_anthropic))

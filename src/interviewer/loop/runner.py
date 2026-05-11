@@ -71,16 +71,45 @@ APOLOGY = "I'm sorry — something on my end isn't working. Let's pause for now.
 _LLM_MAX_ATTEMPTS = 3
 _LLM_BACKOFF_BASE_SECONDS = 0.05
 
-# D11: aggregate eval-call usage on the ``completed`` event. The keys
-# match ``turn_recorded`` per D11; Step 12 plumbs real values through
-# ``llm.last_eval_usage``. In v1 with FakeLLMClient, usage is zero.
-_ZERO_EVAL_USAGE: dict[str, int] = {
-    "tokens_in": 0,
-    "tokens_out": 0,
-    "cache_read_tokens": 0,
-    "cache_write_tokens": 0,
-    "llm_latency_ms": 0,
-}
+# D11 telemetry shape. Same keys used on ``turn_recorded`` (per-compose)
+# and on ``completed`` (aggregated across all eval calls). Concrete LLM
+# clients (AnthropicLLMClient as of Step 12) expose ``last_eval_usage``
+# / ``last_compose_usage`` side channels with these fields; clients that
+# don't (FakeLLMClient) yield zeros.
+_USAGE_KEYS: tuple[str, ...] = (
+    "tokens_in",
+    "tokens_out",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "llm_latency_ms",
+)
+_ZERO_USAGE: dict[str, int] = dict.fromkeys(_USAGE_KEYS, 0)
+
+
+def _read_usage(llm: LLMClient, attr: str) -> dict[str, int]:
+    """Read ``llm.<attr>`` if exposed; else a zeroed Usage dict.
+
+    The :class:`LLMClient` protocol does not declare usage attributes
+    (they're Anthropic-specific; D11 / Step 12). We duck-type the
+    integer fields off whatever object is present.
+    """
+    usage = getattr(llm, attr, None)
+    if usage is None:
+        return dict(_ZERO_USAGE)
+    return {
+        "tokens_in": int(getattr(usage, "tokens_in", 0) or 0),
+        "tokens_out": int(getattr(usage, "tokens_out", 0) or 0),
+        "cache_read_tokens": int(getattr(usage, "cache_read_tokens", 0) or 0),
+        "cache_write_tokens": int(getattr(usage, "cache_write_tokens", 0) or 0),
+        "llm_latency_ms": int(getattr(usage, "llm_latency_ms", 0) or 0),
+    }
+
+
+def _accumulate_eval_usage(state: _RunnerState, llm: LLMClient) -> None:
+    """Add ``llm.last_eval_usage`` (if any) into ``state.eval_usage_totals``."""
+    delta = _read_usage(llm, "last_eval_usage")
+    for key in _USAGE_KEYS:
+        state.eval_usage_totals[key] += delta[key]
 
 
 class LoopCancelled(RuntimeError):
@@ -173,6 +202,7 @@ async def run_loop(
                 except _LLMRetriesExhausted as exc:
                     await _persist_llm_failure(engine, session_id, conv, state)
                     raise LoopFailure("evaluate_turn persistent failure") from exc
+                _accumulate_eval_usage(state, engine.llm)
                 _apply_eval(state, last_active, last_eval)
                 if last_eval.next_action == "close":
                     break
@@ -210,6 +240,7 @@ async def run_loop(
             text,
             addressed=[active.id],
             active_goal_id=active.id,
+            with_compose_usage=True,
         )
         await _record_respondent_turn(
             engine, session_id, conv, state, simulator, addressed=[active.id]
@@ -269,7 +300,7 @@ async def run_loop(
         {
             "goal_statuses": [gs.model_dump() for gs in extract.goal_statuses],
             "total_turns": state.total_turns,
-            "eval_usage_totals": dict(_ZERO_EVAL_USAGE),
+            "eval_usage_totals": dict(state.eval_usage_totals),
         },
     )
     return extract
@@ -289,6 +320,9 @@ class _RunnerState:
         # when (a) the active goal changes, or (b) a non-refusal respondent
         # turn breaks the streak.
         self.refusal_count_on_active: int = 0
+        # D11: aggregated across every successful ``evaluate_turn`` call.
+        # Emitted on the ``completed`` event payload.
+        self.eval_usage_totals: dict[str, int] = dict(_ZERO_USAGE)
 
 
 async def _fresh_bootstrap(
@@ -511,6 +545,7 @@ async def _record_agent_turn(
     *,
     addressed: list[str],
     active_goal_id: str | None = None,
+    with_compose_usage: bool = False,
 ) -> None:
     # D9: flush SessionRuntimeState BEFORE every agent utterance so a
     # crash between save and speak leaves the store in a state that
@@ -538,8 +573,15 @@ async def _record_agent_turn(
     )
     await engine.store.append_turn(session_id, turn)
     state.total_turns += 1
-    # D11 telemetry placeholders. FakeLLMClient does not meter; Step 12
-    # plumbs real values from AnthropicLLMClient.
+    # D11: only probe utterances were composed by the LLM; opening,
+    # closing, RESUME_ACK, APOLOGY, CANCEL_CLOSING are scripted strings
+    # and emit zeros. ``with_compose_usage`` is set by the probe call
+    # site after a successful ``compose_utterance``.
+    usage = (
+        _read_usage(engine.llm, "last_compose_usage")
+        if with_compose_usage
+        else dict(_ZERO_USAGE)
+    )
     await _emit(
         engine,
         session_id,
@@ -549,11 +591,7 @@ async def _record_agent_turn(
             "index": turn.index,
             "speaker": "agent",
             "text": text,
-            "tokens_in": 0,
-            "tokens_out": 0,
-            "cache_read_tokens": 0,
-            "cache_write_tokens": 0,
-            "llm_latency_ms": 0,
+            **usage,
         },
     )
 

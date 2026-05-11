@@ -12,6 +12,7 @@ license = "MIT"
 authors = [{ name = "interviewer authors" }]
 dependencies = [
     "pydantic>=2,<3",
+    "anthropic>=0.40,<1.0",
 ]
 
 [dependency-groups]

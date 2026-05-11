@@ -698,7 +698,7 @@ persisted per turn as a durable hint.
 
 ### Step 12: AnthropicLLMClient
 
-- [ ] complete
+- [x] complete
 
 **Goal:** A real LLM client implementing the three methods. Verified via
 `examples/simulated.py` (substituting AnthropicLLMClient for FakeLLMClient

@@ -394,6 +394,71 @@ plan review. They are binding for all subsequent steps.
   `evaluate_turn`; the `completed` emit site reads it instead of
   the zero constant.
 
+## Step 12 — Pinned `anthropic>=0.40,<1.0`; installed 0.100.0
+
+- **Decision:** dependency pin is `anthropic>=0.40,<1.0`. The SDK
+  currently published on PyPI is 0.100.0 and is what gets installed.
+- **Why:** the SDK is still pre-1.0 but stable enough; the pin avoids
+  a future 1.x with breaking changes auto-installing. PLAN suggested
+  this exact pin; 0.100.0 is verified compatible with the calls used
+  here (`messages.create`, `messages.stream`, tool-use blocks, the
+  `cache_control` system block).
+- **Affects:** Step 13's `livekit-agents` integration shares this
+  Anthropic SDK pin and will need to be re-verified if either SDK
+  pins lifecycle. Step 17's API stability sweep should re-verify the
+  installed `anthropic` version still matches the runtime calls.
+
+## Step 12 — `derive_extract` tool uses a `_ExtractToolInput` partial, not full `Extract`
+
+- **Decision:** the Anthropic `extract` tool's `input_schema` is
+  derived from a private `_ExtractToolInput` model containing only
+  `goal_statuses` + `unprompted_findings`. The wrapper reconstructs
+  the full `Extract` (filling `session_id` / `conversation_id` /
+  `full_transcript` / `completed_at` itself).
+- **Why:** PLAN suggested `anthropic_tool_schema(Extract)`, but the
+  full Extract requires `session_id` (runner-owned, D8 Step 8),
+  `completed_at` (runner-owned), and `full_transcript` (we just sent
+  it — round-tripping wastes tokens and risks transcription
+  drift). The narrower schema is cheaper and removes a class of LLM
+  errors.
+- **Affects:** Step 15's integration tests can assume
+  `Extract.full_transcript` always matches the transcript that was
+  passed in. Step 13's voice entrypoint can reuse the same client
+  unchanged.
+
+## Step 12 — `AnthropicLLMClient` accepts an injected `client` kwarg
+
+- **Decision:** the constructor accepts either `api_key` (constructs
+  `anthropic.AsyncAnthropic` internally) or `client` (an existing
+  SDK client / test fake). At least one is required.
+- **Why:** PLAN's signature is `api_key: str` (required). Adding the
+  `client` kwarg makes the unit tests (which fake the SDK at the
+  client surface) clean — no monkeypatching of module-level imports,
+  no `_client` attribute reach-through.
+- **Affects:** Step 13 may use the same pattern when wiring
+  `InterviewerLLM` (a livekit-agents subclass) — it can pass an
+  existing AsyncAnthropic instance so the SDK is constructed once.
+  Step 17's API audit should treat both kwargs as part of the
+  public surface.
+
+## Step 12 — runner uses `getattr` to read usage off `LLMClient`
+
+- **Decision:** the runner reads `last_compose_usage` / `last_eval_usage`
+  via `getattr(llm, attr, None)`; the `LLMClient` protocol does NOT
+  declare these attributes. Clients that don't expose usage
+  (FakeLLMClient) yield zero dicts.
+- **Why:** `Usage` is an Anthropic-specific concept (D11). Adding
+  it to the protocol would force every implementer (including the
+  in-memory FakeLLMClient and any future client) to surface it,
+  which is scope creep. Duck-typing keeps the protocol minimal.
+- **Affects:** Step 14's SQLite store is unaffected. Step 13's
+  voice entrypoint uses the same usage-read helpers when emitting
+  `turn_recorded`. If a second LLM client is ever added, it should
+  expose `Usage`-shaped attributes (any object with int fields
+  `tokens_in`, `tokens_out`, `cache_read_tokens`,
+  `cache_write_tokens`, `llm_latency_ms`) to participate in
+  telemetry.
+
 ## Step 10 — `_record_agent_turn` owns runtime-state flush
 
 - **Decision:** the runtime-state flush for D9 lives inside
