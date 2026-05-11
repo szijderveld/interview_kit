@@ -929,7 +929,7 @@ the iterator exhausts.
 
 ### Step 13: LiveKit AgentSession integration + voice example
 
-- [ ] complete
+- [x] complete
 
 **Goal:** A user can speak to the agent and hear the agent speak back via
 a LiveKit room, end-to-end. The engine's `entrypoint(ctx)` adapts our

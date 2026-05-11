@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>interviewer — respondent</title>
+<script src="https://unpkg.com/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; max-width: 640px; margin: 4em auto; padding: 0 1em; }
+  #status { padding: 0.5em 1em; border-radius: 6px; background: #f4f4f4; margin: 1em 0; }
+</style>
+</head>
+<body>
+<h1>interviewer — respondent</h1>
+<div id="status">connecting...</div>
+<p>The agent will speak first. Allow microphone access when prompted.</p>
+<script>
+(async () => {
+  const params = new URLSearchParams(window.location.search);
+  const url = params.get("url");
+  const token = params.get("token");
+  const status = document.getElementById("status");
+  if (!url || !token) {
+    status.textContent = "missing ?url= or ?token= in query string";
+    return;
+  }
+  const room = new LivekitClient.Room({ adaptiveStream: true });
+  room.on("disconnected", () => { status.textContent = "disconnected"; });
+  try {
+    await room.connect(url, token);
+    await room.localParticipant.setMicrophoneEnabled(true);
+    status.textContent = "connected — speak when ready";
+  } catch (e) {
+    status.textContent = "connect failed: " + e.message;
+  }
+})();
+</script>
+</body>
+</html>

@@ -490,3 +490,67 @@ plan review. They are binding for all subsequent steps.
 - **Affects:** Step 11 (which finalizes per-goal statuses) does not
   need to retrofit dashboard math — the same accessor flips to the
   canonical Extract count automatically once `save_extract` is called.
+
+## Step 13 — voice path accumulates compose output before yielding
+
+- **Decision:** in voice mode the chat() body fully accumulates
+  `compose_utterance` before pushing a `ChatChunk`. PLAN's pseudocode
+  streamed each chunk as it arrived (PLAN step 13 pseudocode lines
+  8-9), with phrasing regen as a second pass. We diverge: validate
+  first, regen-once if needed (D7), and only then push the final text
+  as one or more chunks.
+- **Why:** streaming-then-regen means the respondent hears the failed
+  candidate before the regen plays, doubling the audio for a one-in-N
+  edge case. Accepting the TTFT cost (~150-300 ms loss vs. true
+  streaming) preserves the validator's purpose; the simulator runner
+  still streams because no audio is involved.
+- **Affects:** Step 17 should consider whether to re-enable streaming
+  + an audio-truncation primitive once the validator's false-positive
+  rate is measured in production.
+
+## Step 13 — `livekit-agents` is an optional `voice` extra
+
+- **Decision:** `pyproject.toml` defines `[project.optional-dependencies] voice`
+  pulling `livekit-agents[deepgram,cartesia,silero]>=1,<2` and
+  `livekit-api>=1,<2`. The same deps are also in the dev dependency-group
+  so test/mypy/ruff runs see them. Engine guards LiveKit-only code paths
+  with local imports so simulator-only consumers never hit a missing-module
+  error.
+- **Why:** the voice install pulls ~30 transitive deps (PyTorch optional
+  plugins, av, opentelemetry, etc.). PLAN explicitly groups them under a
+  `voice` extra. Local imports in engine.py keep the
+  simulator-only call paths cold-fast.
+- **Affects:** consumers installing simulator-only never need the audio
+  stack. Step 14's SQLite store and Step 15's integration tests remain
+  voice-free. Step 17 should keep the runtime `dependencies` list slim.
+
+## Step 13 — pinned `livekit-agents>=1,<2`, `livekit-api>=1,<2`; installed 1.5.8 / 1.1.0
+
+- **Decision:** dependency pins are open-ended within the 1.x major.
+  PLAN suggested `>=1.0` for livekit-agents and `>=0.6` for livekit-api;
+  the latter has already shipped a 1.0, so 1.x is the right cap on both.
+- **Why:** both packages are first-party LiveKit and follow loose semver;
+  pinning to the current 1.x major is enough to avoid surprise 2.x
+  breakage. Plugin extras (`deepgram`, `cartesia`, `silero`) resolved
+  cleanly against 1.5.8 with their corresponding `livekit-plugins-*`
+  packages.
+- **Affects:** Step 17's API stability sweep should re-verify the
+  framework surface (LLM/LLMStream/AgentSession/JobContext, plugin
+  imports `cartesia.TTS(model="sonic-2", ...)` / `deepgram.STT(model="nova-3", ...)`)
+  against whatever's on PyPI at release time.
+
+## Step 13 — `_finalize_extract` lives in `voice/livekit_entry.py`, not on `Engine`
+
+- **Decision:** the canonical-extract pass for the voice path is a
+  module-level helper inside ``voice/livekit_entry.py``, mirroring the
+  end-of-loop work in ``runner.py``. PLAN's pseudocode put it on Engine
+  as ``self._finalize_extract``.
+- **Why:** the runner's terminate path already handles its own
+  finalization without going through Engine. Keeping the voice
+  finalization next to ``InterviewerLLM`` keeps the two paths
+  symmetrical and avoids leaking voice-specific helpers onto the
+  Engine surface. Engine.entrypoint just calls into the module.
+- **Affects:** Step 16's integration docs should point at
+  ``voice/livekit_entry.py`` for the voice flow. Step 17's API audit
+  should not consider ``_finalize_extract`` part of Engine's public
+  surface (it's not).

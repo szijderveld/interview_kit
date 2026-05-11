@@ -15,12 +15,20 @@ dependencies = [
     "anthropic>=0.40,<1.0",
 ]
 
+[project.optional-dependencies]
+voice = [
+    "livekit-agents[deepgram,cartesia,silero]>=1.0,<2",
+    "livekit-api>=1.0,<2",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.23",
     "ruff>=0.6",
     "mypy>=1.10",
+    "livekit-agents>=1.0,<2",
+    "livekit-api>=1.0,<2",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -37,6 +45,17 @@ select = ["E", "F", "I", "B", "UP", "W"]
 strict = true
 python_version = "3.11"
 mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["livekit.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = ["interviewer.voice.*"]
+# voice/* subclasses livekit-agents framework classes; with
+# follow_imports=skip on livekit.*, those bases resolve to Any.
+disallow_subclassing_any = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

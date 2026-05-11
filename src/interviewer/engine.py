@@ -1,14 +1,15 @@
 """Top-level engine — what consumers instantiate and call into.
 
-Step 5 implements the non-loop methods. ``entrypoint`` and
-``simulate_session`` are stubs raising ``NotImplementedError``; their
-bodies arrive in Steps 8 and 13. LiveKit room creation and token minting
-are also stubbed for Step 13 — for now we hand back placeholder
-credentials with a deterministic room name ``iv:{session_id}``.
+Step 5 wired up the non-loop methods against the in-memory store; Step 8
+filled in ``simulate_session``; Step 13 makes the LiveKit voice path
+live. When ``livekit`` is configured, ``provision_session`` mints a real
+LiveKit AccessToken for the room ``iv:{session_id}``, ``cancel_session``
+deletes that room over the LiveKit server API after writing ABANDONED,
+and ``entrypoint`` delegates to :mod:`interviewer.voice.livekit_entry`.
 
 State transitions emit ``SessionEvent``s through the configured sink.
-Per D5, ``goal_status_changed`` events are NOT emitted anywhere yet —
-they appear only at completion in Step 11.
+Per D5, ``goal_status_changed`` events are only emitted at completion
+(inside the canonical extract pass).
 """
 
 from __future__ import annotations
@@ -142,7 +143,9 @@ class Engine:
     async def cancel_session(self, session_id: str, reason: str = "") -> None:
         """Operator-initiated termination. Writes ABANDONED, emits ``abandoned``.
 
-        Room teardown lives in Step 13 (D4).
+        When ``livekit`` is configured, also deletes the room — which
+        disconnects any in-flight ``AgentSession`` and lets the entrypoint
+        unwind via its room-disconnect handler (D4).
         """
         session = await self.store.load_session(session_id)
         if session.state in _TERMINAL_STATES:
@@ -159,6 +162,10 @@ class Engine:
                 payload={"reason": reason},
             )
         )
+        if self.livekit is not None:
+            from interviewer.voice.livekit_entry import delete_room
+
+            await delete_room(self.livekit, session_id)
 
     # ---- reads -----------------------------------------------------------
 
@@ -206,8 +213,18 @@ class Engine:
     # ---- stubs (filled in later steps) -----------------------------------
 
     async def entrypoint(self, ctx: object) -> None:
-        """LiveKit AgentSession entrypoint. Implemented in Step 13."""
-        raise NotImplementedError("Engine.entrypoint arrives in Step 13")
+        """LiveKit AgentSession entrypoint — consumer registers this with their AgentServer.
+
+        Resolves ``session_id`` from the job metadata (or room name),
+        loads the snapshotted Conversation + any persisted runtime
+        state, builds an ``AgentSession`` around ``InterviewerLLM``, and
+        runs until the room disconnects.
+        """
+        # Local import keeps the optional LiveKit deps out of the
+        # simulator-only install path.
+        from interviewer.voice.livekit_entry import run_entrypoint
+
+        await run_entrypoint(self, ctx)
 
     async def simulate_session(
         self, conversation_id: str, simulator: RespondentSimulator
@@ -230,15 +247,28 @@ class Engine:
     def _mint_credentials(
         self, session_id: str, now: datetime
     ) -> SessionCredentials:
-        """Generate join credentials. Real LiveKit room+token wiring lands in Step 13."""
+        """Generate join credentials.
+
+        When ``livekit`` is set, mint a real LiveKit JWT for the room
+        ``iv:{session_id}`` with identity ``respondent:{session_id}``
+        (24-h TTL, D9). Simulator-only deployments get stub credentials
+        with a sentinel URL so consumer code can still flow.
+        """
         room_name = f"iv:{session_id}"
         if self.livekit is not None:
-            room_url = f"{self.livekit.url}#{room_name}"
-        else:
-            room_url = f"stub://room/{room_name}"
+            from interviewer.voice.livekit_entry import mint_join_token
+
+            token, expires_at = mint_join_token(
+                self.livekit, session_id, ttl=_TOKEN_TTL
+            )
+            return SessionCredentials(
+                room_url=self.livekit.url,
+                token=token,
+                expires_at=expires_at,
+            )
         token = f"stub-token-{session_id}-{uuid.uuid4().hex[:8]}"
         return SessionCredentials(
-            room_url=room_url,
+            room_url=f"stub://room/{room_name}",
             token=token,
             expires_at=now + _TOKEN_TTL,
         )

@@ -131,14 +131,16 @@ async def test_provision_session_emits_session_provisioned() -> None:
 async def test_provision_session_uses_livekit_url_when_configured() -> None:
     cfg = LiveKitConfig(
         url="wss://livekit.example.com",
-        api_key="k",
-        api_secret="s",
+        api_key="k-secret-at-least-thirty-two-bytes-long-for-jwt",
+        api_secret="s-secret-at-least-thirty-two-bytes-long-for-jwt",
         agent_name="interviewer",
     )
     engine = _engine(livekit=cfg)
     conv = await _make_conv(engine)
+    # With livekit configured, room_url is the LiveKit WebSocket URL
+    # verbatim; the room name lives inside the JWT (Step 13).
     _, creds = await engine.provision_session(conv.id)
-    assert creds.room_url.startswith("wss://livekit.example.com#iv:")
+    assert creds.room_url == "wss://livekit.example.com"
 
 
 async def test_provision_session_unknown_conversation_raises() -> None:
@@ -348,14 +350,6 @@ async def test_get_extract_returns_none_before_completion() -> None:
     assert await engine.get_extract(session.id) is None
 
 
-# ---------- stubs ----------------------------------------------------------
-
-
-async def test_entrypoint_is_stub() -> None:
-    engine = _engine()
-    with pytest.raises(NotImplementedError):
-        await engine.entrypoint(object())
-
-
-# simulate_session is implemented in Step 8 — end-to-end coverage lives in
-# tests/loop/test_runner_happy_path.py.
+# Voice entrypoint is exercised in tests/voice/test_livekit_entry.py
+# (Step 13). simulate_session is implemented in Step 8 — end-to-end
+# coverage lives in tests/loop/test_runner_happy_path.py.
