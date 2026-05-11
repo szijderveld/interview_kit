@@ -342,6 +342,45 @@ plan review. They are binding for all subsequent steps.
   ``retries_used`` (which include the deflection probe);
   ``refusal_count_on_active`` is runner-internal and never persisted.
 
+## Step 10 — Resume rehydrates the hint table from `Turn.addressed_goal_ids`
+
+- **Decision:** on resume, the runner reconstructs the goal_status_table
+  by marking every goal_id appearing in any persisted
+  `Turn.addressed_goal_ids` as `status="meets"`. The runtime state
+  itself only persists counters (active goal id, retries, tangent
+  budget, total turns), not the table.
+- **Why:** `SessionRuntimeState` is small by design and the
+  goal_status_table is explicitly runner-owned and not persisted
+  (D13). Without a hint, `select_next_goal` would re-probe goals
+  already covered before the crash. Using `addressed_goal_ids` is
+  intentionally lossy — a goal that was being retried (not yet
+  meeting its standard) is treated as meets on resume — but the
+  canonical statuses come from `derive_extract` at completion
+  (D5), so the lossiness is invisible in the final Extract.
+- **Affects:** Step 11's diff computation: a resumed session may
+  show more `goal_status_changed` events because the hint table
+  was reconstructed without nuance. Acceptable since it surfaces
+  the right canonical truth. Step 13's voice entrypoint mirrors
+  the same rehydration.
+
+## Step 10 — `_record_agent_turn` owns runtime-state flush
+
+- **Decision:** the runtime-state flush for D9 lives inside
+  `_record_agent_turn`, parameterised by an `active_goal_id` keyword.
+  Every agent utterance (opening, probe, retry, deflection,
+  RESUME_ACK, closing, cancel-closing, apology) flushes uniformly.
+  The explicit pre-compose flush in the main loop body is removed.
+- **Why:** PLAN Step 10 says "before each agent utterance ...
+  save_runtime_state". Centralising the flush at the single
+  recording site is fewer save points to keep in sync than a
+  bespoke save before each compose call, and it guarantees the
+  spec literally regardless of which utterance path the runner is
+  on.
+- **Affects:** Step 13's voice path uses the same recording helper
+  (or mirrors the flush rule inside `InterviewerLLM.chat()`).
+  Step 14's SQLite store gets the same flush cadence — one save per
+  agent turn rather than two.
+
 ## Step 5 — goals_resolved best-effort
 
 - **Decision:** mid-session `SessionStatus.goals_resolved` counts

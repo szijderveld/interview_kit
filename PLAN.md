@@ -579,7 +579,7 @@ mode), with tests covering each.
 
 ### Step 10: Runtime state persistence and resume
 
-- [ ] complete
+- [x] complete
 
 **Goal:** `SessionRuntimeState` is flushed before every agent utterance;
 `simulate_session` resumes from saved state when present.

@@ -1,26 +1,24 @@
-"""Agent loop body — happy + unhappy paths.
+"""Agent loop body — happy + unhappy paths, with crash recovery.
 
-Step 8 implemented the happy path; Step 9 adds:
+Step 8 implemented the happy path; Step 9 added refusal/IDK handling,
+LLM-call retries with exponential backoff, the turn cap, and operator
+cancel via state observation. Step 10 layers crash recovery on top:
 
-- **Refusal / IDK** (D2): a keyword pre-check on the respondent utterance
-  triggers a single deflection probe on first occurrence (consumes a
-  retry) and ``gave_up`` + advance on second consecutive occurrence.
-- **LLM retries with backoff**: each ``evaluate_turn`` and
-  ``compose_utterance`` call retries up to 3× with exponential backoff
-  (``_LLM_BACKOFF_BASE_SECONDS × 2**attempt``, no ``tenacity``). On
-  exhaustion the runner appends an apology utterance, sets state
-  FAILED, emits ``failed``, and raises :class:`LoopFailure`.
-- **Turn cap**: the loop exits naturally to closing once
-  ``state.total_turns`` reaches ``conversation.max_total_turns``; a
-  probe in flight finishes before exit because the cap is checked at
-  iteration top.
-- **Operator cancel** (D4): at the top of every iteration the runner
-  re-reads ``Session.state``. On ``ABANDONED`` it speaks a short
-  closing and raises :class:`LoopCancelled`; no ``completed`` event is
-  emitted.
-
-Step 10 will persist + resume from ``SessionRuntimeState``; Step 11
-implements the canonical-extract diff against ``goal_status_table``.
+- **Runtime-state flush** (SCOPE Store consistency, D9): a
+  ``SessionRuntimeState`` is written to the store BEFORE every agent
+  utterance — opening, probe, retry, deflection, RESUME_ACK, closing,
+  cancel-closing, apology. Implemented inside :func:`_record_agent_turn`
+  so every code path picks it up uniformly.
+- **Resume on re-entry**: if ``run_loop`` finds a stored
+  ``SessionRuntimeState`` on entry, it rehydrates counters, marks any
+  goal addressed in the existing transcript as ``meets`` (loop-time
+  hint; ``derive_extract`` gives the canonical truth), skips the
+  opening, and speaks :data:`RESUME_ACK` as the first agent utterance.
+  ``RESUME_ACK`` bypasses :func:`validate_voice_phrasing` — the wording
+  is fixed.
+- **Idempotency**: calling ``run_loop`` on a session whose
+  ``Session.state`` is ``COMPLETED`` is a no-op that returns the stored
+  Extract. No new turns, no new events.
 
 Loop ordering. SCOPE lists ``select_next_goal`` before ``evaluate_turn``;
 this runner evaluates the prior respondent turn against the
@@ -37,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 from interviewer.loop.heuristics import detect_refusal_or_idk
 from interviewer.loop.phrasing import validate_voice_phrasing
+from interviewer.loop.resume import RESUME_ACK
 from interviewer.loop.selection import select_next_goal
 from interviewer.protocols import LLMClient, RespondentSimulator
 from interviewer.types.config import Conversation, Goal
@@ -76,6 +75,12 @@ async def run_loop(
 ) -> Extract:
     """Drive the loop against ``simulator`` until terminal condition; return Extract.
 
+    On entry, an existing ``Session.state == COMPLETED`` short-circuits
+    to the cached Extract (idempotent). A stored
+    ``SessionRuntimeState`` triggers the resume path: counters are
+    rehydrated from the runtime state and the transcript, the opening
+    is skipped, and the first agent utterance is :data:`RESUME_ACK`.
+
     Raises :class:`LoopCancelled` on operator-initiated cancel
     (``cancel_session``) and :class:`LoopFailure` after LLM retry
     exhaustion.
@@ -83,27 +88,25 @@ async def run_loop(
     session = await engine.store.load_session(session_id)
     conv = session.conversation_snapshot
 
-    await engine.store.update_session_state(session_id, SessionState.IN_PROGRESS)
-    await _emit(
-        engine,
-        session_id,
-        conv.id,
-        "respondent_joined",
-        {"simulator": simulator.persona_name()},
-    )
+    # Idempotency: a completed session returns its cached Extract with
+    # no further work and no additional events emitted.
+    if session.state == SessionState.COMPLETED:
+        cached = await engine.store.load_extract(session_id)
+        if cached is None:
+            raise RuntimeError(
+                f"session {session_id!r} is COMPLETED but has no extract"
+            )
+        return cached
 
+    runtime = await engine.store.load_runtime_state(session_id)
     state = _RunnerState(conv)
-
-    if conv.opening:
-        await _record_agent_turn(
-            engine, session_id, conv, state, conv.opening, addressed=[]
-        )
-        await _record_respondent_turn(
-            engine, session_id, conv, state, simulator, addressed=[]
-        )
-
     last_active: Goal | None = None
     last_eval: EvalResult | None = None
+
+    if runtime is not None:
+        await _resume_bootstrap(engine, session_id, conv, state, runtime, simulator)
+    else:
+        await _fresh_bootstrap(engine, session_id, conv, state, simulator)
 
     while state.total_turns < conv.max_total_turns:
         current = await engine.store.load_session(session_id)
@@ -167,19 +170,6 @@ async def run_loop(
                 state.retries_used_on_active = 0
                 state.refusal_count_on_active = 0
 
-        await engine.store.save_runtime_state(
-            SessionRuntimeState(
-                session_id=session_id,
-                active_goal_id=active.id,
-                retries_used_on_active=state.retries_used_on_active,
-                tangent_followups_used=state.tangent_followups_used,
-                total_turns=state.total_turns,
-                pending_follow_up=None,
-                last_event_index=0,
-                updated_at=_utcnow(),
-            )
-        )
-
         transcript = await engine.store.list_turns(session_id)
         compose_ctx = _build_ctx(conv, transcript, state, active)
         compose_eval = last_eval or _placeholder_eval()
@@ -192,7 +182,13 @@ async def run_loop(
             raise LoopFailure("compose_utterance persistent failure") from exc
 
         await _record_agent_turn(
-            engine, session_id, conv, state, text, addressed=[active.id]
+            engine,
+            session_id,
+            conv,
+            state,
+            text,
+            addressed=[active.id],
+            active_goal_id=active.id,
         )
         await _record_respondent_turn(
             engine, session_id, conv, state, simulator, addressed=[active.id]
@@ -241,6 +237,83 @@ class _RunnerState:
         # when (a) the active goal changes, or (b) a non-refusal respondent
         # turn breaks the streak.
         self.refusal_count_on_active: int = 0
+
+
+async def _fresh_bootstrap(
+    engine: Engine,
+    session_id: str,
+    conv: Conversation,
+    state: _RunnerState,
+    simulator: RespondentSimulator,
+) -> None:
+    """Initial-run bootstrap: IN_PROGRESS, respondent_joined, optional opening."""
+    await engine.store.update_session_state(session_id, SessionState.IN_PROGRESS)
+    await _emit(
+        engine,
+        session_id,
+        conv.id,
+        "respondent_joined",
+        {"simulator": simulator.persona_name()},
+    )
+    if conv.opening:
+        await _record_agent_turn(
+            engine, session_id, conv, state, conv.opening, addressed=[]
+        )
+        await _record_respondent_turn(
+            engine, session_id, conv, state, simulator, addressed=[]
+        )
+
+
+async def _resume_bootstrap(
+    engine: Engine,
+    session_id: str,
+    conv: Conversation,
+    state: _RunnerState,
+    runtime: SessionRuntimeState,
+    simulator: RespondentSimulator,
+) -> None:
+    """Crash-recovery bootstrap: rehydrate counters, speak RESUME_ACK, continue.
+
+    Goals already touched in the persisted transcript are marked
+    ``meets`` on the goal_status_table as a loop-time hint — this is
+    intentionally lossy (a goal that was being retried looks like a
+    completed one), but the canonical statuses come from
+    :func:`derive_extract` at the end. The runner just needs a hint
+    table that lets :func:`select_next_goal` advance past covered
+    goals.
+    """
+    existing_turns = await engine.store.list_turns(session_id)
+    state.total_turns = len(existing_turns)
+    state.retries_used_on_active = runtime.retries_used_on_active
+    state.tangent_followups_used = runtime.tangent_followups_used
+
+    addressed_so_far: set[str] = set()
+    for turn in existing_turns:
+        addressed_so_far.update(turn.addressed_goal_ids)
+    for goal_id in addressed_so_far:
+        if goal_id in state.goal_status_table:
+            current = state.goal_status_table[goal_id]
+            state.goal_status_table[goal_id] = current.model_copy(
+                update={
+                    "status": "meets",
+                    "rationale": "resumed: prior coverage in transcript",
+                }
+            )
+
+    # Resume from ABANDONED is permitted (SCOPE open question 2 / D9);
+    # flip the flag so the cancel-observation check in the main loop
+    # doesn't immediately fire on a session that was previously
+    # abandoned and is now being intentionally resumed.
+    await engine.store.update_session_state(session_id, SessionState.IN_PROGRESS)
+
+    # RESUME_ACK is a fixed known-good utterance; skip phrasing
+    # validation deliberately.
+    await _record_agent_turn(
+        engine, session_id, conv, state, RESUME_ACK, addressed=[]
+    )
+    await _record_respondent_turn(
+        engine, session_id, conv, state, simulator, addressed=[]
+    )
 
 
 def _build_ctx(
@@ -385,7 +458,25 @@ async def _record_agent_turn(
     text: str,
     *,
     addressed: list[str],
+    active_goal_id: str | None = None,
 ) -> None:
+    # D9: flush SessionRuntimeState BEFORE every agent utterance so a
+    # crash between save and speak leaves the store in a state that
+    # resumes cleanly. ``active_goal_id`` is the goal this utterance is
+    # probing (None for opening / closing / RESUME_ACK / APOLOGY /
+    # CANCEL_CLOSING).
+    await engine.store.save_runtime_state(
+        SessionRuntimeState(
+            session_id=session_id,
+            active_goal_id=active_goal_id,
+            retries_used_on_active=state.retries_used_on_active,
+            tangent_followups_used=state.tangent_followups_used,
+            total_turns=state.total_turns,
+            pending_follow_up=None,
+            last_event_index=max(state.total_turns - 1, 0),
+            updated_at=_utcnow(),
+        )
+    )
     turn = Turn(
         index=state.total_turns,
         speaker="agent",
