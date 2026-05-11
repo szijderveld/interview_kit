@@ -40,12 +40,23 @@ class FakeLLMClient:
         eval_results: list[EvalResult] | None = None,
         utterances: list[str] | None = None,
         findings: list[Finding] | None = None,
+        eval_failures: int = 0,
+        compose_failures: int = 0,
     ) -> None:
         self._eval_results: deque[EvalResult] = deque(eval_results or [])
         self._utterances: deque[str] = deque(utterances or [])
         self._findings: list[Finding] = list(findings or [])
+        # Failure counters: each call decrements; while > 0, the method raises
+        # so the runner's retry path is exercised. Set high (e.g., 100) to
+        # simulate persistent failure, set to N for a transient outage that
+        # recovers on attempt N+1.
+        self._eval_failures_remaining = eval_failures
+        self._compose_failures_remaining = compose_failures
 
     async def evaluate_turn(self, ctx: TurnContext) -> EvalResult:
+        if self._eval_failures_remaining > 0:
+            self._eval_failures_remaining -= 1
+            raise RuntimeError("FakeLLMClient: simulated evaluate_turn failure")
         if not self._eval_results:
             raise RuntimeError("FakeLLMClient: evaluate_turn queue exhausted")
         return self._eval_results.popleft()
@@ -53,6 +64,9 @@ class FakeLLMClient:
     def compose_utterance(
         self, ctx: TurnContext, eval_result: EvalResult
     ) -> AsyncIterator[str]:
+        if self._compose_failures_remaining > 0:
+            self._compose_failures_remaining -= 1
+            raise RuntimeError("FakeLLMClient: simulated compose_utterance failure")
         if not self._utterances:
             raise RuntimeError("FakeLLMClient: compose_utterance queue exhausted")
         text = self._utterances.popleft()

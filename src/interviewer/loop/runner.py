@@ -1,30 +1,41 @@
-"""Agent loop body — happy path only (Step 8).
+"""Agent loop body — happy + unhappy paths.
 
-Unhappy paths (refusal, IDK, LLM API failure, turn cap, cancel) land in
-Step 9; runtime-state persistence + resume in Step 10; canonical extract
-diff in Step 11.
+Step 8 implemented the happy path; Step 9 adds:
 
-Loop ordering note. SCOPE's flow lists ``select_next_goal`` before
-``evaluate_turn``. In practice the two need to interleave because
-``evaluate_turn`` judges the prior respondent turn against the goal that
-was active when that turn happened — not against whatever new goal
-``select_next_goal`` would have picked. So this runner evaluates the
-``last_active`` goal at the top of each iteration, applies the result to
-the in-memory ``goal_status_table`` (D13), then calls ``select_next_goal``
-against the updated table to pick the goal we'll actually probe.
+- **Refusal / IDK** (D2): a keyword pre-check on the respondent utterance
+  triggers a single deflection probe on first occurrence (consumes a
+  retry) and ``gave_up`` + advance on second consecutive occurrence.
+- **LLM retries with backoff**: each ``evaluate_turn`` and
+  ``compose_utterance`` call retries up to 3× with exponential backoff
+  (``_LLM_BACKOFF_BASE_SECONDS × 2**attempt``, no ``tenacity``). On
+  exhaustion the runner appends an apology utterance, sets state
+  FAILED, emits ``failed``, and raises :class:`LoopFailure`.
+- **Turn cap**: the loop exits naturally to closing once
+  ``state.total_turns`` reaches ``conversation.max_total_turns``; a
+  probe in flight finishes before exit because the cap is checked at
+  iteration top.
+- **Operator cancel** (D4): at the top of every iteration the runner
+  re-reads ``Session.state``. On ``ABANDONED`` it speaks a short
+  closing and raises :class:`LoopCancelled`; no ``completed`` event is
+  emitted.
 
-The ``goal_status_table`` is loop-time hint state per D13: it drives
-selection and seeds the Step 11 diff, but is not the canonical
-authority. ``derive_extract`` at completion produces the canonical
-``GoalStatus.evidence_turn_indices``.
+Step 10 will persist + resume from ``SessionRuntimeState``; Step 11
+implements the canonical-extract diff against ``goal_status_table``.
+
+Loop ordering. SCOPE lists ``select_next_goal`` before ``evaluate_turn``;
+this runner evaluates the prior respondent turn against the
+*previously-active* goal first, then re-selects from the updated
+table. See DECISIONS Step 8.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from interviewer.loop.heuristics import detect_refusal_or_idk
 from interviewer.loop.phrasing import validate_voice_phrasing
 from interviewer.loop.selection import select_next_goal
 from interviewer.protocols import LLMClient, RespondentSimulator
@@ -45,12 +56,30 @@ if TYPE_CHECKING:
 
 
 DEFAULT_CLOSING = "Thanks for your time — that's everything I needed."
+CANCEL_CLOSING = "Looks like we need to wrap. Thanks for the time you gave."
+APOLOGY = "I'm sorry — something on my end isn't working. Let's pause for now."
+
+_LLM_MAX_ATTEMPTS = 3
+_LLM_BACKOFF_BASE_SECONDS = 0.05
+
+
+class LoopCancelled(RuntimeError):
+    """Raised when ``Session.state`` flips to ABANDONED mid-flight."""
+
+
+class LoopFailure(RuntimeError):
+    """Raised after LLM retry exhaustion. Session state is set to FAILED."""
 
 
 async def run_loop(
     engine: Engine, session_id: str, simulator: RespondentSimulator
 ) -> Extract:
-    """Drive the loop against ``simulator`` until terminal condition; return Extract."""
+    """Drive the loop against ``simulator`` until terminal condition; return Extract.
+
+    Raises :class:`LoopCancelled` on operator-initiated cancel
+    (``cancel_session``) and :class:`LoopFailure` after LLM retry
+    exhaustion.
+    """
     session = await engine.store.load_session(session_id)
     conv = session.conversation_snapshot
 
@@ -77,22 +106,66 @@ async def run_loop(
     last_eval: EvalResult | None = None
 
     while state.total_turns < conv.max_total_turns:
-        # Evaluate the prior respondent turn against last_active (skipped on
-        # the first main-loop iteration — nothing to evaluate yet).
+        current = await engine.store.load_session(session_id)
+        if current.state == SessionState.ABANDONED:
+            await _record_agent_turn(
+                engine, session_id, conv, state, CANCEL_CLOSING, addressed=[]
+            )
+            raise LoopCancelled("session abandoned mid-loop")
+
+        deflection = False
+
         if last_active is not None:
             transcript = await engine.store.list_turns(session_id)
-            eval_ctx = _build_ctx(conv, transcript, state, last_active)
-            last_eval = await engine.llm.evaluate_turn(eval_ctx)
-            _apply_eval(state, last_active, last_eval)
-            if last_eval.next_action == "close":
+            last_resp = next(
+                (t for t in reversed(transcript) if t.speaker == "respondent"),
+                None,
+            )
+            refusal = last_resp is not None and detect_refusal_or_idk(last_resp.text)
+
+            if refusal:
+                state.refusal_count_on_active += 1
+                if state.refusal_count_on_active >= 2:
+                    last_eval = EvalResult(
+                        active_goal_status="gave_up",
+                        next_action="advance",
+                        rationale="two consecutive refusals/IDK on this goal",
+                    )
+                    _apply_eval(state, last_active, last_eval)
+                    last_active = None
+                else:
+                    last_eval = EvalResult(
+                        active_goal_status="partial",
+                        next_action="retry",
+                        rationale="refusal/IDK — sending deflection probe",
+                    )
+                    _apply_eval(state, last_active, last_eval)
+                    deflection = True
+            else:
+                state.refusal_count_on_active = 0
+                eval_ctx = _build_ctx(conv, transcript, state, last_active)
+                try:
+                    last_eval = await _evaluate_with_retry(engine.llm, eval_ctx)
+                except _LLMRetriesExhausted as exc:
+                    await _persist_llm_failure(engine, session_id, conv, state)
+                    raise LoopFailure("evaluate_turn persistent failure") from exc
+                _apply_eval(state, last_active, last_eval)
+                if last_eval.next_action == "close":
+                    break
+
+        active: Goal
+        if deflection and last_active is not None:
+            active = last_active
+        else:
+            candidate = select_next_goal(
+                conv, list(state.goal_status_table.values())
+            )
+            if candidate is None:
                 break
-
-        active = select_next_goal(conv, list(state.goal_status_table.values()))
-        if active is None:
-            break
-
-        if last_active is None or active.id != last_active.id:
-            state.retries_used_on_active = 0
+            active = candidate
+            if last_active is None or active.id != last_active.id:
+                state.retries_used_on_active = 0
+                state.refusal_count_on_active = 0
 
         await engine.store.save_runtime_state(
             SessionRuntimeState(
@@ -110,7 +183,13 @@ async def run_loop(
         transcript = await engine.store.list_turns(session_id)
         compose_ctx = _build_ctx(conv, transcript, state, active)
         compose_eval = last_eval or _placeholder_eval()
-        text = await _compose_with_regen(engine.llm, compose_ctx, compose_eval)
+        try:
+            text = await _compose_with_regen_and_retry(
+                engine.llm, compose_ctx, compose_eval
+            )
+        except _LLMRetriesExhausted as exc:
+            await _persist_llm_failure(engine, session_id, conv, state)
+            raise LoopFailure("compose_utterance persistent failure") from exc
 
         await _record_agent_turn(
             engine, session_id, conv, state, text, addressed=[active.id]
@@ -158,6 +237,10 @@ class _RunnerState:
         self.total_turns: int = 0
         self.retries_used_on_active: int = 0
         self.tangent_followups_used: int = 0
+        # Tracks consecutive refusals/IDK on the current active goal. Reset
+        # when (a) the active goal changes, or (b) a non-refusal respondent
+        # turn breaks the streak.
+        self.refusal_count_on_active: int = 0
 
 
 def _build_ctx(
@@ -205,11 +288,49 @@ def _apply_eval(
     # advance / close: no in-place counter change. retries reset on goal change.
 
 
-async def _compose_with_regen(
+class _LLMRetriesExhausted(Exception):
+    """Internal: signals that the retry budget for an LLM call is spent."""
+
+
+async def _evaluate_with_retry(llm: LLMClient, ctx: TurnContext) -> EvalResult:
+    """Retry ``evaluate_turn`` up to ``_LLM_MAX_ATTEMPTS`` with exponential backoff."""
+    last_exc: BaseException | None = None
+    for attempt in range(_LLM_MAX_ATTEMPTS):
+        try:
+            return await llm.evaluate_turn(ctx)
+        # LLM client implementations may raise arbitrary exception types
+        # (anthropic.APIError, pydantic.ValidationError, …). Catching
+        # Exception is the right scope: BaseException-only types
+        # (CancelledError, KeyboardInterrupt) still propagate.
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _LLM_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(_LLM_BACKOFF_BASE_SECONDS * (2**attempt))
+                continue
+    raise _LLMRetriesExhausted("evaluate_turn") from last_exc
+
+
+async def _compose_with_retry(
     llm: LLMClient, ctx: TurnContext, eval_result: EvalResult
 ) -> str:
-    """Compose, validate phrasing, regen once on failure (D7)."""
-    text = await _accumulate(llm.compose_utterance(ctx, eval_result))
+    """Retry ``compose_utterance`` up to ``_LLM_MAX_ATTEMPTS`` with backoff."""
+    last_exc: BaseException | None = None
+    for attempt in range(_LLM_MAX_ATTEMPTS):
+        try:
+            return await _accumulate(llm.compose_utterance(ctx, eval_result))
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _LLM_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(_LLM_BACKOFF_BASE_SECONDS * (2**attempt))
+                continue
+    raise _LLMRetriesExhausted("compose_utterance") from last_exc
+
+
+async def _compose_with_regen_and_retry(
+    llm: LLMClient, ctx: TurnContext, eval_result: EvalResult
+) -> str:
+    """Compose with retry; regen once on phrasing failure (D7)."""
+    text = await _compose_with_retry(llm, ctx, eval_result)
     failures = validate_voice_phrasing(text)
     if failures:
         regen_ctx = ctx.model_copy(
@@ -217,8 +338,8 @@ async def _compose_with_regen(
                 "last_phrasing_failure": ",".join(f.value for f in failures),
             }
         )
-        text = await _accumulate(llm.compose_utterance(regen_ctx, eval_result))
-        # D7: speak verbatim if the second attempt also fails — no further regen.
+        text = await _compose_with_retry(llm, regen_ctx, eval_result)
+        # D7: speak verbatim if the second attempt also fails.
     return text
 
 
@@ -236,6 +357,23 @@ def _placeholder_eval() -> EvalResult:
         interesting_tangent=None,
         next_action="advance",
         rationale="",
+    )
+
+
+async def _persist_llm_failure(
+    engine: Engine, session_id: str, conv: Conversation, state: _RunnerState
+) -> None:
+    """Record apology turn, set state FAILED, emit ``failed`` event."""
+    await _record_agent_turn(
+        engine, session_id, conv, state, APOLOGY, addressed=[]
+    )
+    await engine.store.update_session_state(session_id, SessionState.FAILED)
+    await _emit(
+        engine,
+        session_id,
+        conv.id,
+        "failed",
+        {"reason": "llm_persistent_failure"},
     )
 
 

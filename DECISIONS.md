@@ -307,6 +307,41 @@ plan review. They are binding for all subsequent steps.
   Step 13's voice-mode entrypoint mirrors the same pattern inside
   ``InterviewerLLM.chat()``.
 
+## Step 9 — run_loop signals cancel/failure via exceptions
+
+- **Decision:** ``run_loop`` raises ``LoopCancelled`` on operator cancel
+  (state observed ABANDONED mid-iteration) and ``LoopFailure`` after
+  LLM retry exhaustion (state has been set to FAILED, apology turn
+  appended, ``failed`` event emitted). ``simulate_session`` lets both
+  propagate.
+- **Why:** SCOPE pins ``simulate_session(...) -> Extract``. The cancel
+  and LLM-failure paths persist state to ABANDONED / FAILED and do
+  not produce an Extract. Returning ``Extract | None`` would expand
+  the surface; ignoring the failure mode would lose the signal.
+  Raising preserves the type contract for the happy path and gives
+  callers a clean ``pytest.raises`` boundary.
+- **Affects:** Step 13's voice ``entrypoint`` mirrors the same two
+  exception types (or framework-level equivalents). Step 15's
+  integration tests assert ABANDONED / FAILED state and the
+  appropriate exception per scenario.
+
+## Step 9 — refusal_count is a separate counter from retries_used_on_active
+
+- **Decision:** ``_RunnerState`` adds ``refusal_count_on_active``
+  alongside ``retries_used_on_active``. The two diverge: a refusal
+  bumps both (via the synthesized retry-action eval and the explicit
+  refusal counter), but a non-refusal partial answer that the LLM
+  judges ``retry`` only bumps ``retries_used_on_active``. The refusal
+  counter is reset by (a) a goal change or (b) a non-refusal
+  respondent turn.
+- **Why:** SCOPE's give-up rule is "two consecutive refusals/IDK on
+  the same goal," not "two retries used." A single counter conflates
+  the two and would either give up too early (on legit retries) or
+  too late (mixing in refusals across non-consecutive turns).
+- **Affects:** the ``goal_status_table`` entries record
+  ``retries_used`` (which include the deflection probe);
+  ``refusal_count_on_active`` is runner-internal and never persisted.
+
 ## Step 5 — goals_resolved best-effort
 
 - **Decision:** mid-session `SessionStatus.goals_resolved` counts

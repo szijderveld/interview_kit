@@ -527,7 +527,7 @@ detection, no splitter** (per DECISIONS.md D7).
 
 ### Step 9: Unhappy paths in the loop
 
-- [ ] complete
+- [x] complete
 
 **Goal:** Every unhappy path from SCOPE.md handled in `run_loop` (simulator
 mode), with tests covering each.
