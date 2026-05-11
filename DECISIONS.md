@@ -539,6 +539,57 @@ plan review. They are binding for all subsequent steps.
   imports `cartesia.TTS(model="sonic-2", ...)` / `deepgram.STT(model="nova-3", ...)`)
   against whatever's on PyPI at release time.
 
+## Step 14 — class-based shared suite for ConversationStore round-trip tests
+
+- **Decision:** the round-trip protocol tests live in a non-`Test*`-prefixed
+  base class `StoreRoundTripSuite` in `tests/stores/_round_trip.py`. Each
+  per-store test module subclasses it and provides a `store`
+  `pytest_asyncio.fixture` returning the concrete implementation. Both
+  `tests/stores/test_memory_store.py` and `tests/stores/test_sqlite_store.py`
+  exist; each gets the full suite via inheritance.
+- **Why:** PLAN.md explicitly names both filenames and says "same protocol
+  round-trip suite ... run against SQLite." A single parametrized
+  fixture in `conftest.py` would have flattened both stores into one
+  file and obscured store-specific tests (persistence across reconnect,
+  `connect()` idempotence). The class-based pattern keeps the suite
+  shared while leaving room for store-specific cases at module level.
+- **Affects:** future stores (Postgres, etc.) subclass the same suite
+  by providing only a `store` fixture. Step 15's integration tests
+  rely on the SQLite store passing the protocol contract verbatim.
+
+## Step 14 — no FK on `runtime_states` / `extracts`, only on `turns`
+
+- **Decision:** the SQLite schema declares
+  `FOREIGN KEY (session_id) REFERENCES sessions(id)` on `turns` only.
+  `runtime_states` and `extracts` use a bare `session_id TEXT PRIMARY KEY`.
+- **Why:** `InMemoryConversationStore` permits saving a runtime state
+  or an extract before any matching `Session` row exists (the existing
+  protocol tests rely on this — `test_save_and_load_runtime_state` and
+  `test_save_and_load_extract` skip the session-create step). Enforcing
+  FKs there would break the shared round-trip suite and diverge from
+  the protocol's de-facto permissiveness. `turns` already validates
+  session existence at the Python layer (raising `KeyError`); declaring
+  the FK there is belt-and-suspenders.
+- **Affects:** Step 15's integration tests can persist runtime state
+  before inserting a Session row. If a future store enforces stricter
+  referential integrity, the round-trip suite must be amended uniformly
+  rather than per-store.
+
+## Step 14 — `WebhookEventSink` retries every `httpx.HTTPError` uniformly
+
+- **Decision:** the retry loop catches `httpx.HTTPError` (which
+  includes `HTTPStatusError` raised by `raise_for_status()` for 4xx
+  and 5xx) and retries up to `max_attempts` for every failure class.
+  4xx, 5xx, and transport errors are treated identically.
+- **Why:** PLAN said "Retries 3× with exponential backoff" without
+  carving out client errors. Splitting 4xx (no retry) from 5xx
+  (retry) requires a richer policy than the plan asks for and only
+  saves a handful of redundant requests; the simpler loop is one
+  fewer branch to keep tested.
+- **Affects:** consumers needing smarter policy supply their own
+  `httpx.AsyncClient` (with a retry transport, custom timeout, etc.)
+  via the `client=` kwarg. The sink stays minimal.
+
 ## Step 13 — `_finalize_extract` lives in `voice/livekit_entry.py`, not on `Engine`
 
 - **Decision:** the canonical-extract pass for the voice path is a

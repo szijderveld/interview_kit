@@ -1264,7 +1264,7 @@ not the worker. It:
 
 ### Step 14: SQLite store + reference event sinks
 
-- [ ] complete
+- [x] complete
 
 **Goal:** A SQLite-backed `ConversationStore` and two reference
 `EventSink`s (logging + webhook), suitable as starting points for consumer

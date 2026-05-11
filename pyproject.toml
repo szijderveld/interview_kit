@@ -13,6 +13,8 @@ authors = [{ name = "interviewer authors" }]
 dependencies = [
     "pydantic>=2,<3",
     "anthropic>=0.40,<1.0",
+    "aiosqlite>=0.22.1",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
