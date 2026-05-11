@@ -20,6 +20,15 @@ cancel via state observation. Step 10 layers crash recovery on top:
   ``Session.state`` is ``COMPLETED`` is a no-op that returns the stored
   Extract. No new turns, no new events.
 
+Step 11 adds the canonical-extract pass: at completion the runner
+snapshots the loop-time ``goal_status_table`` (D13), routes the
+transcript through :func:`derive_extract_with_llm`, diffs the
+canonical statuses against the snapshot, and emits one
+``goal_status_changed`` event per differing goal — strictly before
+the ``completed`` event (D5). The ``completed`` payload carries the
+final canonical goal_statuses table plus an ``eval_usage_totals``
+dict (D11; populated by Step 12).
+
 Loop ordering. SCOPE lists ``select_next_goal`` before ``evaluate_turn``;
 this runner evaluates the prior respondent turn against the
 *previously-active* goal first, then re-selects from the updated
@@ -33,6 +42,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from interviewer.loop.extract import derive_extract_with_llm
 from interviewer.loop.heuristics import detect_refusal_or_idk
 from interviewer.loop.phrasing import validate_voice_phrasing
 from interviewer.loop.resume import RESUME_ACK
@@ -60,6 +70,17 @@ APOLOGY = "I'm sorry — something on my end isn't working. Let's pause for now.
 
 _LLM_MAX_ATTEMPTS = 3
 _LLM_BACKOFF_BASE_SECONDS = 0.05
+
+# D11: aggregate eval-call usage on the ``completed`` event. The keys
+# match ``turn_recorded`` per D11; Step 12 plumbs real values through
+# ``llm.last_eval_usage``. In v1 with FakeLLMClient, usage is zero.
+_ZERO_EVAL_USAGE: dict[str, int] = {
+    "tokens_in": 0,
+    "tokens_out": 0,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0,
+    "llm_latency_ms": 0,
+}
 
 
 class LoopCancelled(RuntimeError):
@@ -201,15 +222,45 @@ async def run_loop(
         engine, session_id, conv, state, closing_text, addressed=[]
     )
 
+    # Snapshot the loop-time hint table BEFORE the canonical LLM pass
+    # (D13). The diff between snapshot and canonical is what produces
+    # the ``goal_status_changed`` events below (D5).
+    hint_snapshot: dict[str, GoalStatus] = dict(state.goal_status_table)
+
     transcript = await engine.store.list_turns(session_id)
-    raw_extract = await engine.llm.derive_extract(transcript, conv)
+    raw_extract = await derive_extract_with_llm(transcript, conv, engine.llm)
     now = _utcnow()
     extract = raw_extract.model_copy(
         update={"session_id": session_id, "completed_at": now}
     )
     await engine.store.save_extract(extract)
-
     await engine.store.update_session_state(session_id, SessionState.COMPLETED)
+
+    # D5: emit goal_status_changed exactly once per diffed goal, before
+    # the completed event. Iterate in conv.goals order so emission is
+    # deterministic across runs regardless of dict insertion order.
+    canonical_by_id = {gs.goal_id: gs for gs in extract.goal_statuses}
+    for goal in conv.goals:
+        canonical_gs = canonical_by_id.get(goal.id)
+        if canonical_gs is None:
+            continue
+        snapshot_gs = hint_snapshot.get(goal.id)
+        snapshot_status = snapshot_gs.status if snapshot_gs is not None else None
+        if snapshot_status == canonical_gs.status:
+            continue
+        await _emit(
+            engine,
+            session_id,
+            conv.id,
+            "goal_status_changed",
+            {
+                "goal_id": goal.id,
+                "from_status": snapshot_status,
+                "to_status": canonical_gs.status,
+                "rationale": canonical_gs.rationale,
+            },
+        )
+
     await _emit(
         engine,
         session_id,
@@ -218,6 +269,7 @@ async def run_loop(
         {
             "goal_statuses": [gs.model_dump() for gs in extract.goal_statuses],
             "total_turns": state.total_turns,
+            "eval_usage_totals": dict(_ZERO_EVAL_USAGE),
         },
     )
     return extract

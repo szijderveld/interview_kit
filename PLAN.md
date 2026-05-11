@@ -626,7 +626,7 @@ mode), with tests covering each.
 
 ### Step 11: derive_extract — canonical post-hoc mapping
 
-- [ ] complete
+- [x] complete
 
 **Goal:** A real `derive_extract` that produces canonical
 `GoalStatus.evidence_turn_indices` over the full transcript, then emits

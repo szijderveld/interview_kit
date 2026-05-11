@@ -7,6 +7,12 @@ and yields its text in 1–3 chunks (simulating streaming), and
 ``GoalStatus.evidence_turn_indices`` with ``status="meets"`` where there
 is any evidence and ``"pending"`` otherwise.
 
+``force_disagreement_for`` (Step 11) lets a test deliberately diverge
+the canonical Extract from the runner's loop-time hint table: any goal
+id in that set gets ``status="partial"`` in the returned Extract
+regardless of evidence, so the diff path that emits
+``goal_status_changed`` events can be exercised end-to-end.
+
 The runner overrides ``Extract.session_id`` and ``Extract.completed_at``
 after this client returns (see DECISIONS Step 8) — this client only has
 to produce a structurally valid Extract using ``conv.id`` as a
@@ -42,6 +48,7 @@ class FakeLLMClient:
         findings: list[Finding] | None = None,
         eval_failures: int = 0,
         compose_failures: int = 0,
+        force_disagreement_for: list[str] | None = None,
     ) -> None:
         self._eval_results: deque[EvalResult] = deque(eval_results or [])
         self._utterances: deque[str] = deque(utterances or [])
@@ -52,6 +59,12 @@ class FakeLLMClient:
         # recovers on attempt N+1.
         self._eval_failures_remaining = eval_failures
         self._compose_failures_remaining = compose_failures
+        # Step 11 test hook: goal ids whose canonical status the fake
+        # client should force to "partial" so the loop-time-hint diff
+        # path emits ``goal_status_changed``. Never naturally produced.
+        self._force_disagreement_for: frozenset[str] = frozenset(
+            force_disagreement_for or []
+        )
 
     async def evaluate_turn(self, ctx: TurnContext) -> EvalResult:
         if self._eval_failures_remaining > 0:
@@ -78,14 +91,21 @@ class FakeLLMClient:
         goal_statuses: list[GoalStatus] = []
         for goal in conv.goals:
             evidence = [t.index for t in transcript if goal.id in t.addressed_goal_ids]
-            status: GoalStatusValue = "meets" if evidence else "pending"
+            status: GoalStatusValue
+            rationale: str
+            if goal.id in self._force_disagreement_for:
+                status = "partial"
+                rationale = "fake-llm: forced disagreement for test"
+            else:
+                status = "meets" if evidence else "pending"
+                rationale = "fake-llm: addressed_goal_ids mapping"
             goal_statuses.append(
                 GoalStatus(
                     goal_id=goal.id,
                     status=status,
                     evidence_turn_indices=evidence,
                     retries_used=0,
-                    rationale="fake-llm: addressed_goal_ids mapping",
+                    rationale=rationale,
                 )
             )
         # session_id and completed_at are runner-owned; conv.id is a valid

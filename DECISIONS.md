@@ -363,6 +363,37 @@ plan review. They are binding for all subsequent steps.
   the right canonical truth. Step 13's voice entrypoint mirrors
   the same rehydration.
 
+## Step 11 — goal_status_changed emission ordered by `Conversation.goals`
+
+- **Decision:** the runner iterates `conv.goals` (not the canonical
+  Extract's list, not the runner's hint dict) when computing the
+  diff and emitting `goal_status_changed` events.
+- **Why:** the canonical `Extract.goal_statuses` is a list whose
+  internal ordering is decided by the LLM (or the FakeLLMClient
+  loop), and `dict` insertion order would mirror that — making
+  event order LLM-dependent. Using `conv.goals` order makes diff
+  emission deterministic, which matters for test assertions and
+  for consumers wiring sequencing logic onto the event stream.
+- **Affects:** Step 12's AnthropicLLMClient: order of returned
+  `goal_statuses` is not load-bearing for the runner. Tests in
+  Step 15 can rely on event-order assertions against this scheme.
+
+## Step 11 — `eval_usage_totals` reserved in `completed` payload now, populated in Step 12
+
+- **Decision:** the `completed` event payload includes an
+  `eval_usage_totals` dict whose keys match the `turn_recorded`
+  usage shape (D11). In Step 11 (FakeLLMClient only), every value
+  is zero. Step 12 (AnthropicLLMClient) plumbs real per-call usage
+  through the runner and writes accumulated totals here.
+- **Why:** consumers subscribing to `completed` get a stable
+  payload shape from day one; Step 12's only change is populating
+  values, not adding a new field. The contract is fixed at the
+  earliest step that ships the event.
+- **Affects:** Step 12 adds a `_RunnerState.eval_usage_totals`
+  accumulator and writes to it after every successful
+  `evaluate_turn`; the `completed` emit site reads it instead of
+  the zero constant.
+
 ## Step 10 — `_record_agent_turn` owns runtime-state flush
 
 - **Decision:** the runtime-state flush for D9 lives inside
