@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>interviewer — respondent</title>
-<script src="https://unpkg.com/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+<script src="https://unpkg.com/livekit-client@2/dist/livekit-client.umd.js"></script>
 <style>
   body { font: 14px/1.4 system-ui, sans-serif; max-width: 640px; margin: 4em auto; padding: 0 1em; }
   #status { padding: 0.5em 1em; border-radius: 6px; background: #f4f4f4; margin: 1em 0; }
@@ -23,8 +23,15 @@
     status.textContent = "missing ?url= or ?token= in query string";
     return;
   }
-  const room = new LivekitClient.Room({ adaptiveStream: true });
+  const room = new LivekitClient.Room({ adaptiveStream: true, autoSubscribe: true });
   room.on("disconnected", () => { status.textContent = "disconnected"; });
+  room.on(LivekitClient.RoomEvent.TrackSubscribed, (track) => {
+    if (track.kind === "audio") {
+      const el = track.attach();
+      el.autoplay = true;
+      document.body.appendChild(el);
+    }
+  });
   try {
     await room.connect(url, token);
     await room.localParticipant.setMicrophoneEnabled(true);

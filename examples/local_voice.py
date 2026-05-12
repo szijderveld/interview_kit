@@ -33,15 +33,19 @@ from interviewer import (
 )
 from interviewer.llm.anthropic import AnthropicLLMClient
 from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.memory import InMemoryConversationStore
+from interviewer.stores.sqlite import SQLiteConversationStore
+
+_STORE_PATH = os.environ.get("INTERVIEWER_DB", "/tmp/interviewer.db")
 
 if TYPE_CHECKING:
     from livekit.agents import JobContext
 
 
-def build_engine() -> Engine:
+async def build_engine() -> Engine:
+    store = SQLiteConversationStore(_STORE_PATH)
+    await store.connect()
     return Engine(
-        store=InMemoryConversationStore(),
+        store=store,
         events=InMemoryEventSink(),
         llm=AnthropicLLMClient(api_key=os.environ["ANTHROPIC_API_KEY"]),
         livekit=LiveKitConfig(
@@ -82,7 +86,7 @@ async def _create_conversation(engine: Engine) -> Conversation:
 
 
 async def main_provision() -> None:
-    engine = build_engine()
+    engine = await build_engine()
     conv = await _create_conversation(engine)
     session, creds = await engine.provision_session(conv.id)
     join_html = Path(__file__).parent / "join_page.html"
@@ -97,7 +101,7 @@ async def main_provision() -> None:
 
 
 async def worker_entrypoint(ctx: JobContext) -> None:
-    engine = build_engine()
+    engine = await build_engine()
     await engine.entrypoint(ctx)
 
 
@@ -109,7 +113,6 @@ def _run_worker() -> None:
     agents.cli.run_app(
         agents.WorkerOptions(
             entrypoint_fnc=worker_entrypoint,
-            agent_name="interviewer",
         )
     )
 
