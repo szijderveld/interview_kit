@@ -1356,7 +1356,7 @@ and store layers together.
 
 ### Step 16: Documentation
 
-- [ ] complete
+- [x] complete
 
 **Goal:** README + integration guide + complete docstrings on the public
 API surface.
