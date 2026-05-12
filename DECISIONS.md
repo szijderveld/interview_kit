@@ -645,3 +645,55 @@ plan review. They are binding for all subsequent steps.
   ``voice/livekit_entry.py`` for the voice flow. Step 17's API audit
   should not consider ``_finalize_extract`` part of Engine's public
   surface (it's not).
+
+## Step 17 — Public API audit vs. SCOPE.md
+
+- **Decision:** ``src/interviewer/__init__.py`` re-exports every name
+  in SCOPE.md's Public API section: configuration types (``Persona``,
+  ``Background``, ``Goal``, ``Conversation``), runtime types
+  (``Session``, ``SessionCredentials``, ``SessionRuntimeState``,
+  ``Turn``, ``GoalStatus``, ``Finding``, ``Extract``, ``SessionStatus``,
+  ``TurnContext``, ``EvalResult``), ``SessionState``, ``SessionEvent``,
+  the four consumer protocols (``ConversationStore``, ``EventSink``,
+  ``LLMClient``, ``RespondentSimulator``), ``Engine``, and
+  ``LiveKitConfig``. SCOPE's "Defaults the package ships" entries
+  (``AnthropicLLMClient``, ``InMemoryConversationStore``,
+  ``InMemoryEventSink``, ``SQLiteConversationStore``,
+  ``LoggingEventSink``, ``WebhookEventSink``, the four reference
+  simulators, ``FakeLLMClient``) are intentionally NOT re-exported at
+  the top level — consumers import them from their owning submodule
+  (``interviewer.llm.anthropic``, ``interviewer.stores.sqlite``, etc.),
+  matching the pattern already established in ``examples/`` and
+  ``docs/integration.md``.
+- **Why:** the SCOPE Public API section enumerates the types and
+  protocols the package guarantees stability on; the Defaults section
+  describes pluggable reference implementations whose import paths
+  already document themselves. Top-level re-exports of the defaults
+  would put a longer surface under the package's stability contract
+  than SCOPE actually pins; submodule imports keep the contract narrow
+  while still giving consumers one obvious place to find each impl.
+- **Affects:** v0.1.0 stability promise covers exactly the names in
+  ``interviewer.__all__``. Future moves of default impls between
+  submodules are NOT breaking changes per this audit; renaming or
+  removing anything in ``__all__`` IS breaking.
+
+## Step 17 — Internal-only modules deliberately excluded from re-export
+
+- **Decision:** the following modules are present in the source tree
+  but NOT re-exported by ``interviewer/__init__.py``:
+  ``interviewer.loop.runner``, ``interviewer.loop.selection``,
+  ``interviewer.loop.phrasing``, ``interviewer.loop.extract``,
+  ``interviewer.loop.heuristics``, ``interviewer.loop.resume``,
+  ``interviewer.llm.prompts``, ``interviewer.llm.schemas``,
+  ``interviewer.voice.livekit_entry``. They remain importable for
+  advanced consumers and tests but are NOT part of the package's
+  stability contract.
+- **Why:** PLAN Step 17 says internal modules (``loop/heuristics.py``
+  etc.) are not re-exported. These all sit behind ``Engine`` /
+  ``simulate_session`` / ``entrypoint``; consumers reach them only
+  when extending or testing. Freezing their signatures would make
+  routine loop refactors breaking changes.
+- **Affects:** post-v0.1.0 changes inside ``loop/``, ``llm/prompts``,
+  ``llm/schemas``, and ``voice/livekit_entry`` are NOT breaking.
+  Anything a consumer pins onto from these modules is at their own
+  risk; integration tests in this repo are allowed to do so.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "interviewer"
-version = "0.0.1"
+version = "0.1.0"
 description = "Adaptive voice-interview engine."
 readme = "README.md"
 requires-python = ">=3.11"

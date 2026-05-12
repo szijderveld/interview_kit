@@ -1403,7 +1403,7 @@ API surface.
 
 ### Step 17: Final pass — types, lint, API stability
 
-- [ ] complete
+- [x] complete
 
 **Goal:** mypy strict clean across the whole tree; ruff clean; the
 exported API surface matches SCOPE.md exactly.
