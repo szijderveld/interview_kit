@@ -254,7 +254,10 @@ async def test_terse_evasive_persona_completes_well_formed(
         "role", "stack", "bugs", "review", "future"
     }
     # Statuses are drawn from the legal set.
-    legal = {"pending", "meets", "partial", "skipped_redundant", "gave_up"}
+    legal = {
+        "pending", "meets", "partial",
+        "skipped_redundant", "skipped_refused", "gave_up",
+    }
     assert all(gs.status in legal for gs in extract.goal_statuses)
 
     # Transcript alternates speakers except for closing as final agent turn.

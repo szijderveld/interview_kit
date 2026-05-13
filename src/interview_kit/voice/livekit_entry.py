@@ -66,7 +66,7 @@ from livekit.agents.types import (
 
 from interview_kit.livekit_config import LiveKitConfig
 from interview_kit.loop.extract import derive_extract_with_llm
-from interview_kit.loop.heuristics import detect_refusal_or_idk
+from interview_kit.loop.heuristics import detect_idk, detect_refusal
 from interview_kit.loop.phrasing import validate_voice_phrasing
 from interview_kit.loop.resume import RESUME_ACK
 from interview_kit.loop.selection import select_next_goal
@@ -135,7 +135,7 @@ class PerSessionState:
     total_turns: int = 0
     retries_used_on_active: int = 0
     tangent_followups_used: int = 0
-    refusal_count_on_active: int = 0
+    idk_count_on_active: int = 0
     last_active: Goal | None = None
     last_eval: EvalResult | None = None
     eval_usage_totals: dict[str, int] = field(default_factory=lambda: dict(_ZERO_USAGE))
@@ -286,19 +286,33 @@ class _InterviewerStream(LLMStream):
             await self._terminate(reason="max_total_turns")
             return
 
-        # Refusal/IDK detection — mirrors runner's branch in
-        # ``run_loop``. Two consecutive refusals on the same goal mark
-        # the active goal ``gave_up`` and advance; one refusal triggers
-        # a deflection probe.
+        # Refusal vs IDK detection — mirrors runner's branch in
+        # ``run_loop``. Refusal (consent-decline) is a one-shot:
+        # ``skipped_refused`` and advance, no deflection. IDK gets one
+        # deflection probe; two consecutive IDKs on the same goal mark
+        # it ``gave_up`` and advance.
         deflection = False
         if state.last_active is not None:
-            if detect_refusal_or_idk(respondent_text):
-                state.refusal_count_on_active += 1
-                if state.refusal_count_on_active >= 2:
+            if detect_refusal(respondent_text):
+                state.goal_status_table[state.last_active.id] = (
+                    state.goal_status_table[state.last_active.id].model_copy(
+                        update={
+                            "status": "skipped_refused",
+                            "rationale": "respondent declined to answer",
+                            "retries_used": state.retries_used_on_active,
+                        }
+                    )
+                )
+                state.last_eval = None
+                state.last_active = None
+                state.idk_count_on_active = 0
+            elif detect_idk(respondent_text):
+                state.idk_count_on_active += 1
+                if state.idk_count_on_active >= 2:
                     state.last_eval = EvalResult(
                         active_goal_status="gave_up",
                         next_action="advance",
-                        rationale="two consecutive refusals/IDK on this goal",
+                        rationale="two consecutive IDKs on this goal",
                     )
                     _apply_eval(state, state.last_active, state.last_eval)
                     state.last_active = None
@@ -306,12 +320,12 @@ class _InterviewerStream(LLMStream):
                     state.last_eval = EvalResult(
                         active_goal_status="partial",
                         next_action="retry",
-                        rationale="refusal/IDK — sending deflection probe",
+                        rationale="IDK — sending deflection probe",
                     )
                     _apply_eval(state, state.last_active, state.last_eval)
                     deflection = True
             else:
-                state.refusal_count_on_active = 0
+                state.idk_count_on_active = 0
                 transcript = await state.store.list_turns(state.session_id)
                 eval_ctx = _build_ctx(state, transcript, state.last_active)
                 try:
@@ -339,7 +353,7 @@ class _InterviewerStream(LLMStream):
             active = candidate
             if state.last_active is None or active.id != state.last_active.id:
                 state.retries_used_on_active = 0
-                state.refusal_count_on_active = 0
+                state.idk_count_on_active = 0
 
         # Compose — accumulate, validate, regen once on phrasing failure.
         # Voice-mode divergence from the runner: we yield the final text

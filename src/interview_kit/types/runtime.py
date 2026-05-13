@@ -16,7 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from interview_kit.types.config import Conversation, Goal
 from interview_kit.types.state import SessionState
 
-GoalStatusValue = Literal["pending", "meets", "partial", "skipped_redundant", "gave_up"]
+GoalStatusValue = Literal[
+    "pending", "meets", "partial", "skipped_redundant", "skipped_refused", "gave_up"
+]
 EvalGoalStatusValue = Literal["pending", "meets", "partial", "gave_up"]
 NextAction = Literal["advance", "retry", "probe", "close"]
 ProbeKind = Literal["clarify", "example", "importance", "contrast", "elaborate"]

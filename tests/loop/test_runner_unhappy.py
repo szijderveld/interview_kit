@@ -153,8 +153,8 @@ async def test_double_refusal_marks_gave_up_and_advances() -> None:
     assert "failed" not in types
 
 
-async def test_idk_keyword_triggers_same_path_as_refusal() -> None:
-    """Coverage: ``no idea`` is detected the same as ``rather not``."""
+async def test_idk_keyword_triggers_deflection_probe() -> None:
+    """Coverage: ``no idea`` is detected as IDK and triggers a deflection."""
     llm = FakeLLMClient(
         eval_results=[EvalResult(active_goal_status="meets", next_action="advance")],
         utterances=[

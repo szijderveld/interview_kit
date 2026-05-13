@@ -12,6 +12,13 @@
   a `probe_clarify` when the model reports a hedged or vague answer,
   capped at once per goal. Internal loop signal only — not surfaced
   on `GoalStatus` or `Extract`.
+- Refusal and IDK no longer share a code path. A consent-decline
+  ("I'd rather not", "prefer not", …) marks the active goal
+  `skipped_refused` (new `GoalStatusValue`) on the first hit and
+  advances without speaking a deflection — pressing on a stated
+  boundary is wrong. "I don't know" keeps the two-strike behavior:
+  one deflection probe, then `gave_up`. Refused goals are resolved
+  for the rest of the session and are never re-selected.
 
 ## 0.2.0
 

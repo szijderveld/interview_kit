@@ -11,7 +11,7 @@ from interview_kit.types.config import Conversation, Goal
 from interview_kit.types.runtime import GoalStatus, GoalStatusValue
 
 _RESOLVED: frozenset[GoalStatusValue] = frozenset(
-    {"meets", "skipped_redundant", "gave_up"}
+    {"meets", "skipped_redundant", "skipped_refused", "gave_up"}
 )
 _DEP_SATISFIED: frozenset[GoalStatusValue] = frozenset({"meets", "skipped_redundant"})
 

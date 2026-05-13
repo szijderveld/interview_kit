@@ -39,7 +39,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from interview_kit.loop.extract import derive_extract_with_llm
-from interview_kit.loop.heuristics import detect_refusal_or_idk
+from interview_kit.loop.heuristics import detect_idk, detect_refusal
 from interview_kit.loop.openings import DEFAULT_OPENING
 from interview_kit.loop.phrasing import validate_voice_phrasing
 from interview_kit.loop.resume import RESUME_ACK
@@ -171,15 +171,31 @@ async def run_loop(
                 (t for t in reversed(transcript) if t.speaker == "respondent"),
                 None,
             )
-            refusal = last_resp is not None and detect_refusal_or_idk(last_resp.text)
+            resp_text = last_resp.text if last_resp is not None else ""
 
-            if refusal:
-                state.refusal_count_on_active += 1
-                if state.refusal_count_on_active >= 2:
+            if last_resp is not None and detect_refusal(resp_text):
+                # Consent-decline: mark skipped_refused and advance. No
+                # deflection probe — pressing on a refused goal would be
+                # ignoring a stated boundary.
+                state.goal_status_table[last_active.id] = (
+                    state.goal_status_table[last_active.id].model_copy(
+                        update={
+                            "status": "skipped_refused",
+                            "rationale": "respondent declined to answer",
+                            "retries_used": state.retries_used_on_active,
+                        }
+                    )
+                )
+                last_eval = None
+                last_active = None
+                state.idk_count_on_active = 0
+            elif last_resp is not None and detect_idk(resp_text):
+                state.idk_count_on_active += 1
+                if state.idk_count_on_active >= 2:
                     last_eval = EvalResult(
                         active_goal_status="gave_up",
                         next_action="advance",
-                        rationale="two consecutive refusals/IDK on this goal",
+                        rationale="two consecutive IDKs on this goal",
                     )
                     _apply_eval(state, last_active, last_eval)
                     last_active = None
@@ -187,12 +203,12 @@ async def run_loop(
                     last_eval = EvalResult(
                         active_goal_status="partial",
                         next_action="retry",
-                        rationale="refusal/IDK — sending deflection probe",
+                        rationale="IDK — sending deflection probe",
                     )
                     _apply_eval(state, last_active, last_eval)
                     deflection = True
             else:
-                state.refusal_count_on_active = 0
+                state.idk_count_on_active = 0
                 eval_ctx = _build_ctx(conv, transcript, state, last_active)
                 try:
                     last_eval = await _evaluate_with_retry(engine.llm, eval_ctx)
@@ -217,7 +233,7 @@ async def run_loop(
             active = candidate
             if last_active is None or active.id != last_active.id:
                 state.retries_used_on_active = 0
-                state.refusal_count_on_active = 0
+                state.idk_count_on_active = 0
                 state.clarify_used_on_active = 0
 
         transcript = await engine.store.list_turns(session_id)
@@ -331,10 +347,10 @@ class _RunnerState:
         self.total_turns: int = 0
         self.retries_used_on_active: int = 0
         self.tangent_followups_used: int = 0
-        # Tracks consecutive refusals/IDK on the current active goal. Reset
-        # when (a) the active goal changes, or (b) a non-refusal respondent
-        # turn breaks the streak.
-        self.refusal_count_on_active: int = 0
+        # Tracks consecutive IDKs on the current active goal. Reset when
+        # (a) the active goal changes, or (b) a non-IDK respondent turn
+        # breaks the streak. Refusals are a one-shot path (no counter).
+        self.idk_count_on_active: int = 0
         # Per-goal cap on the hedge-driven clarify override (Step 25). Reset
         # on goal change so each goal gets at most one forced clarify probe.
         self.clarify_used_on_active: int = 0
