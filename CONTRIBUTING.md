@@ -1,13 +1,13 @@
 # Contributing
 
-Development workflow for the `interview-kit` repository. Requires
+Development workflow for the `interview_kit` repository. Requires
 [uv](https://docs.astral.sh/uv/).
 
 ## Source checkout
 
 ```sh
-git clone https://github.com/szijderveld/interviewer.git
-cd interviewer
+git clone https://github.com/szijderveld/interview_kit.git
+cd interview_kit
 uv sync --all-extras --dev
 ```
 
@@ -24,7 +24,7 @@ All three must pass before a commit.
 ## Repo-root simulator entry
 
 The repo ships an `examples/simulated.py` shim equivalent to
-`interviewer demo`:
+`interview_kit demo`:
 
 ```sh
 uv run python examples/simulated.py
@@ -58,9 +58,3 @@ ANTHROPIC_API_KEY=... DEEPGRAM_API_KEY=... CARTESIA_API_KEY=... \
 ```
 
 See [examples/local_voice.py](examples/local_voice.py) for the wiring.
-
-## Plan-driven development
-
-Build steps live in [PLAN.md](PLAN.md); design decisions log in
-[DECISIONS.md](DECISIONS.md). Each plan step gets one commit;
-acceptance criteria are not optional.

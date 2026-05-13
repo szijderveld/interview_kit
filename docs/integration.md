@@ -1,9 +1,8 @@
 # Integration guide
 
-This document describes how a consumer application plugs `interviewer`
+This document describes how a consumer application plugs `interview_kit`
 into its stack. The engine is a library: it owns the conversation logic,
-not deployment, persistence, or UI. See [SCOPE.md](../SCOPE.md) for the
-design contract; this guide is operational.
+not deployment, persistence, or UI.
 
 ## Deployment shape
 
@@ -47,15 +46,18 @@ The protocol is all `async def` (D3). The engine writes a
 `SessionRuntimeState` and any `Turn` before the next agent utterance, and
 calls `update_session_state` as soon as a transition is decided.
 
-Use [`src/interviewer/stores/sqlite.py`](../src/interviewer/stores/sqlite.py)
+Use [`src/interview_kit/stores/sqlite.py`](../src/interview_kit/stores/sqlite.py)
 as a reference. Key points:
 
 - One row per session in `sessions`, with a JSON column holding the
-  `conversation_snapshot` (D10).
+  `conversation_snapshot` (the Session pins the Conversation it ran
+  against, so mid-call edits to the underlying Conversation cannot
+  affect an in-flight session).
 - One row per turn in `turns`, indexed on `(session_id, turn_index)`.
-- One row per session in `runtime_states` and `extracts` (no FK in the
-  reference impl — the in-memory store accepts these without a Session
-  row; see DECISIONS.md "Step 14 — no FK").
+- One row per session in `runtime_states` and `extracts`. The reference
+  impls intentionally have no FK constraint on `session_id` — the
+  in-memory store accepts these rows without a Session row so tests can
+  assert on partial fixtures.
 - All Pydantic blobs serialise via `model_dump_json` / `model_validate_json`.
 
 For Postgres or another store, follow the same shape. The shared
@@ -67,14 +69,14 @@ your implementation pass it.
 The protocol has one method: `async def emit(event: SessionEvent) -> None`.
 
 Reference impls:
-- [`sinks/memory.py`](../src/interviewer/sinks/memory.py) — for tests.
-- [`sinks/logging.py`](../src/interviewer/sinks/logging.py) — writes to a
+- [`sinks/memory.py`](../src/interview_kit/sinks/memory.py) — for tests.
+- [`sinks/logging.py`](../src/interview_kit/sinks/logging.py) — writes to a
   `logging.Logger`.
-- [`sinks/webhook.py`](../src/interviewer/sinks/webhook.py) — POSTs to a
+- [`sinks/webhook.py`](../src/interview_kit/sinks/webhook.py) — POSTs to a
   URL via `httpx.AsyncClient`, retries `httpx.HTTPError` up to N times.
 
 Event payload shapes are described in the
-[`types/events.py`](../src/interviewer/types/events.py) docstring; notably,
+[`types/events.py`](../src/interview_kit/types/events.py) docstring; notably,
 `turn_recorded.payload` carries per-turn LLM usage (D11) and
 `goal_status_changed` is emitted only at completion (D5).
 
@@ -109,10 +111,10 @@ Event payload shapes are described in the
 ```python
 # shared_engine.py
 import os
-from interviewer import Engine, LiveKitConfig
-from interviewer.llm.anthropic import AnthropicLLMClient
-from interviewer.sinks.webhook import WebhookEventSink
-from interviewer.stores.sqlite import SQLiteConversationStore
+from interview_kit import Engine, LiveKitConfig
+from interview_kit.llm.anthropic import AnthropicLLMClient
+from interview_kit.sinks.webhook import WebhookEventSink
+from interview_kit.stores.sqlite import SQLiteConversationStore
 
 async def build_engine() -> Engine:
     store = SQLiteConversationStore(os.environ["DATABASE_PATH"])
@@ -133,7 +135,7 @@ async def build_engine() -> Engine:
 ```python
 # web_app.py — FastAPI
 from fastapi import FastAPI
-from interviewer import Background, Goal, Persona
+from interview_kit import Background, Goal, Persona
 from shared_engine import build_engine
 
 app = FastAPI()
@@ -226,12 +228,12 @@ through the same `LLMClient` calls as the voice path, so you can
 exercise the real Anthropic prompts end-to-end without a LiveKit room.
 
 ```python
-from interviewer.testing.simulators import TerseEvasiveSimulator
+from interview_kit.testing.simulators import TerseEvasiveSimulator
 
 extract = await engine.simulate_session(conv.id, TerseEvasiveSimulator())
 ```
 
 For deterministic tests, swap `AnthropicLLMClient` for
-`interviewer.testing.fake_llm.FakeLLMClient` driven by a scripted queue
+`interview_kit.testing.fake_llm.FakeLLMClient` driven by a scripted queue
 of `EvalResult` and utterance strings. See `examples/simulated.py` for
 a runnable template.

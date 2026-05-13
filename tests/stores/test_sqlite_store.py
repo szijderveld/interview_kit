@@ -15,15 +15,15 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from interviewer import (
+from interview_kit import (
     Background,
     Conversation,
     Goal,
     Persona,
     Session,
 )
-from interviewer.protocols import ConversationStore
-from interviewer.stores.sqlite import SQLiteConversationStore
+from interview_kit.protocols import ConversationStore
+from interview_kit.stores.sqlite import SQLiteConversationStore
 from tests.stores._round_trip import StoreRoundTripSuite
 
 
@@ -63,7 +63,7 @@ def _conv() -> Conversation:
     return Conversation(
         id="conv-1",
         persona=Persona(
-            system_prompt="You are an interviewer.",
+            system_prompt="You are an interview_kit.",
             style="neutral",
             voice_id="cartesia-1",
         ),

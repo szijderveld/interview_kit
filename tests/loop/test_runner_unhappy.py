@@ -6,8 +6,8 @@ from collections import deque
 
 import pytest
 
-import interviewer.loop.runner as _runner_mod
-from interviewer import (
+import interview_kit.loop.runner as _runner_mod
+from interview_kit import (
     Background,
     Engine,
     EvalResult,
@@ -15,18 +15,18 @@ from interviewer import (
     Persona,
     SessionState,
 )
-from interviewer.loop.runner import (
+from interview_kit.loop.runner import (
     APOLOGY,
     CANCEL_CLOSING,
     LoopCancelled,
     LoopFailure,
     run_loop,
 )
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.memory import InMemoryConversationStore
-from interviewer.testing.fake_llm import FakeLLMClient
-from interviewer.testing.simulators import ScriptedSimulator
-from interviewer.types.runtime import Turn
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.stores.memory import InMemoryConversationStore
+from interview_kit.testing.fake_llm import FakeLLMClient
+from interview_kit.testing.simulators import ScriptedSimulator
+from interview_kit.types.runtime import Turn
 
 
 @pytest.fixture(autouse=True)
@@ -36,7 +36,7 @@ def _zero_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _persona() -> Persona:
-    return Persona(system_prompt="You are an interviewer.", style="neutral", voice_id="v")
+    return Persona(system_prompt="You are an interview_kit.", style="neutral", voice_id="v")
 
 
 def _background() -> Background:

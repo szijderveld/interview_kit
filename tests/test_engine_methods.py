@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from interviewer import (
+from interview_kit import (
     Background,
     Conversation,
     Engine,
@@ -19,8 +19,8 @@ from interviewer import (
     Turn,
     TurnContext,
 )
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.memory import InMemoryConversationStore
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.stores.memory import InMemoryConversationStore
 
 
 class _StubLLM:
@@ -51,7 +51,7 @@ def _engine(*, livekit: LiveKitConfig | None = None) -> Engine:
 
 def _persona() -> Persona:
     return Persona(
-        system_prompt="You are an interviewer.",
+        system_prompt="You are an interview_kit.",
         style="neutral",
         voice_id="cartesia-1",
     )

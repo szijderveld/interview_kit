@@ -30,7 +30,7 @@ from collections import deque
 
 import pytest
 
-from interviewer import (
+from interview_kit import (
     Background,
     Engine,
     EvalResult,
@@ -38,15 +38,15 @@ from interviewer import (
     Persona,
     SessionState,
 )
-from interviewer.loop.runner import CANCEL_CLOSING, LoopCancelled, run_loop
-from interviewer.protocols import ConversationStore
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.testing.fake_llm import FakeLLMClient
-from interviewer.testing.simulators import (
+from interview_kit.loop.runner import CANCEL_CLOSING, LoopCancelled, run_loop
+from interview_kit.protocols import ConversationStore
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.testing.fake_llm import FakeLLMClient
+from interview_kit.testing.simulators import (
     ScriptedSimulator,
     TerseEvasiveSimulator,
 )
-from interviewer.types.runtime import Turn
+from interview_kit.types.runtime import Turn
 
 # ---------- helpers ----------
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from interviewer import (
+from interview_kit import (
     Background,
     Engine,
     EvalResult,
@@ -10,10 +10,10 @@ from interviewer import (
     Persona,
     SessionState,
 )
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.memory import InMemoryConversationStore
-from interviewer.testing.fake_llm import FakeLLMClient
-from interviewer.testing.simulators import ScriptedSimulator
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.stores.memory import InMemoryConversationStore
+from interview_kit.testing.fake_llm import FakeLLMClient
+from interview_kit.testing.simulators import ScriptedSimulator
 
 
 def _eval_meets_advance(rationale: str = "ok") -> EvalResult:
@@ -41,7 +41,7 @@ async def _build_engine_and_conv() -> tuple[Engine, InMemoryEventSink, str]:
 
     conv = await engine.create_conversation(
         persona=Persona(
-            system_prompt="You are a discovery interviewer.",
+            system_prompt="You are a discovery interview_kit.",
             style="neutral",
             voice_id="v1",
         ),
@@ -165,7 +165,7 @@ async def test_redundancy_in_eval_marks_other_goals_skipped() -> None:
     engine = Engine(store=store, events=events, llm=llm)
     conv = await engine.create_conversation(
         persona=Persona(
-            system_prompt="You are a discovery interviewer.",
+            system_prompt="You are a discovery interview_kit.",
             style="neutral",
             voice_id="v1",
         ),

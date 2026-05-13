@@ -5,9 +5,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from interviewer import SessionEvent
-from interviewer.protocols import EventSink
-from interviewer.sinks.logging import LoggingEventSink
+from interview_kit import SessionEvent
+from interview_kit.protocols import EventSink
+from interview_kit.sinks.logging import LoggingEventSink
 
 
 def _ts(seconds: int) -> datetime:
@@ -33,8 +33,8 @@ def test_protocol_conformance_static() -> None:
 
 
 async def test_emit_writes_log_record(caplog: pytest.LogCaptureFixture) -> None:
-    sink = LoggingEventSink(logger_name="interviewer.events.test_emit")
-    caplog.set_level(logging.INFO, logger="interviewer.events.test_emit")
+    sink = LoggingEventSink(logger_name="interview_kit.events.test_emit")
+    caplog.set_level(logging.INFO, logger="interview_kit.events.test_emit")
     await sink.emit(_event("turn_recorded"))
     assert any(
         rec.levelno == logging.INFO
@@ -46,9 +46,9 @@ async def test_emit_writes_log_record(caplog: pytest.LogCaptureFixture) -> None:
 
 async def test_emit_uses_configured_level(caplog: pytest.LogCaptureFixture) -> None:
     sink = LoggingEventSink(
-        logger_name="interviewer.events.test_level", level=logging.DEBUG
+        logger_name="interview_kit.events.test_level", level=logging.DEBUG
     )
-    caplog.set_level(logging.DEBUG, logger="interviewer.events.test_level")
+    caplog.set_level(logging.DEBUG, logger="interview_kit.events.test_level")
     await sink.emit(_event("completed"))
     assert any(rec.levelno == logging.DEBUG for rec in caplog.records)
 
@@ -60,7 +60,7 @@ async def test_emit_uses_injected_logger() -> None:
         def emit(self, record: logging.LogRecord) -> None:
             captured.append((record.levelno, record.getMessage()))
 
-    logger = logging.getLogger("interviewer.events.test_injected")
+    logger = logging.getLogger("interview_kit.events.test_injected")
     logger.setLevel(logging.INFO)
     handler = _CapturingHandler()
     logger.addHandler(handler)

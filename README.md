@@ -1,4 +1,4 @@
-# interview-kit
+# interview_kit
 
 Adaptive voice-interview engine. The operator defines a Conversation — a
 persona for the interviewer, a purpose, and a list of Goals (each with a
@@ -7,30 +7,26 @@ voice agent (LiveKit + Deepgram STT + Anthropic LLM + Cartesia TTS),
 adapts mid-call (clarifying, drilling, skipping redundant goals), and
 produces a structured Extract mapping every claim back to who said it
 and when. This package is the engine — storage, web layer, link domain,
-and UI are the consumer's responsibility. See
-[SCOPE.md](SCOPE.md) for the design contract.
+and UI are the consumer's responsibility.
 
 ## Install
 
 Requires Python 3.11+.
 
 ```sh
-pip install interview-kit
+pip install interview_kit
 ```
 
 The voice extra pulls in LiveKit and the audio plugins:
 
 ```sh
-pip install "interview-kit[voice]"
+pip install "interview_kit[voice]"
 ```
-
-The distribution name on PyPI is `interview-kit`; the import name is
-`interviewer`.
 
 ## Smoke test (no API key)
 
 ```sh
-interviewer demo
+interview_kit demo
 ```
 
 Runs the full agent loop against a synthetic respondent and a
@@ -62,8 +58,8 @@ Then, with `ANTHROPIC_API_KEY` set:
 
 ```python
 import asyncio
-from interviewer import Conversation, Engine
-from interviewer.testing.simulators import RamblyKnowledgeableSimulator
+from interview_kit import Conversation, Engine
+from interview_kit.testing.simulators import RamblyKnowledgeableSimulator
 
 async def main() -> None:
     engine = Engine.with_defaults()

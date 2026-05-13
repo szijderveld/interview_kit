@@ -13,8 +13,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from interviewer.llm.schemas import anthropic_tool_schema
-from interviewer.types.runtime import EvalResult, Extract
+from interview_kit.llm.schemas import anthropic_tool_schema
+from interview_kit.types.runtime import EvalResult, Extract
 
 
 class _Nested(BaseModel):

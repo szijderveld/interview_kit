@@ -20,7 +20,7 @@ import jwt
 import pytest
 from livekit.agents.llm import ChatContext
 
-from interviewer import (
+from interview_kit import (
     Background,
     Conversation,
     Engine,
@@ -29,11 +29,11 @@ from interviewer import (
     Persona,
     SessionState,
 )
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.memory import InMemoryConversationStore
-from interviewer.testing.fake_llm import FakeLLMClient
-from interviewer.types.runtime import EvalResult
-from interviewer.voice.livekit_entry import (
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.stores.memory import InMemoryConversationStore
+from interview_kit.testing.fake_llm import FakeLLMClient
+from interview_kit.types.runtime import EvalResult
+from interview_kit.voice.livekit_entry import (
     InterviewerLLM,
     PerSessionState,
     initial_status_table,
@@ -193,7 +193,7 @@ async def _bootstrap_state() -> PerSessionState:
     # ABANDONED-check load_session() succeeds.
     from datetime import UTC, datetime
 
-    from interviewer.types.runtime import Session as SessionRow
+    from interview_kit.types.runtime import Session as SessionRow
 
     session = SessionRow(
         id="sess-1",

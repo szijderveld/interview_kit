@@ -1,9 +1,11 @@
 # Changelog
 
-## 0.2.0 — renamed distribution to interview-kit; PyPI metadata.
+## 0.2.0
 
-README rewritten around pip install; CONTRIBUTING.md split out.
+- Renamed distribution and import to `interview_kit`.
+- Added PyPI metadata, console script, and `[voice]` extra.
+- README rewritten around `pip install`; `CONTRIBUTING.md` split out.
 
 ## 0.1.0
 
-Initial release per SCOPE.md.
+Initial release.

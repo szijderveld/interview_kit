@@ -11,8 +11,8 @@ from collections.abc import AsyncIterator
 
 import pytest_asyncio
 
-from interviewer.protocols import ConversationStore
-from interviewer.stores.memory import InMemoryConversationStore
+from interview_kit.protocols import ConversationStore
+from interview_kit.stores.memory import InMemoryConversationStore
 from tests.stores._round_trip import StoreRoundTripSuite
 
 

@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from interviewer import Background, Conversation, Goal, Persona
+from interview_kit import Background, Conversation, Goal, Persona
 
 
 def _persona() -> Persona:
     return Persona(
-        system_prompt="You are an interviewer.",
+        system_prompt="You are an interview_kit.",
         style="neutral",
         voice_id="cartesia-neutral-1",
     )

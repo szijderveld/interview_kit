@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from interviewer import (
+from interview_kit import (
     Background,
     Conversation,
     Extract,
@@ -24,7 +24,7 @@ from interviewer import (
     SessionState,
     Turn,
 )
-from interviewer.protocols import ConversationStore
+from interview_kit.protocols import ConversationStore
 
 
 def _ts() -> datetime:
@@ -35,7 +35,7 @@ def _conv() -> Conversation:
     return Conversation(
         id="conv-1",
         persona=Persona(
-            system_prompt="You are an interviewer.",
+            system_prompt="You are an interview_kit.",
             style="neutral",
             voice_id="cartesia-1",
         ),

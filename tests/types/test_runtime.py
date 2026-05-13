@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from interviewer import (
+from interview_kit import (
     Background,
     Conversation,
     EvalResult,
@@ -29,7 +29,7 @@ def _conv() -> Conversation:
     return Conversation(
         id="conv-1",
         persona=Persona(
-            system_prompt="You are an interviewer.",
+            system_prompt="You are an interview_kit.",
             style="neutral",
             voice_id="cartesia-1",
         ),

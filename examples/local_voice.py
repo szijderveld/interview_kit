@@ -1,4 +1,4 @@
-"""Run interviewer end-to-end against a local LiveKit dev server.
+"""Run interview_kit end-to-end against a local LiveKit dev server.
 
 Required env vars: ``ANTHROPIC_API_KEY``, ``DEEPGRAM_API_KEY``,
 ``CARTESIA_API_KEY``, ``LIVEKIT_URL`` (default ``ws://localhost:7880``),
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from interviewer import (
+from interview_kit import (
     Background,
     Conversation,
     Engine,
@@ -31,11 +31,11 @@ from interviewer import (
     LiveKitConfig,
     Persona,
 )
-from interviewer.llm.anthropic import AnthropicLLMClient
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.sqlite import SQLiteConversationStore
+from interview_kit.llm.anthropic import AnthropicLLMClient
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.stores.sqlite import SQLiteConversationStore
 
-_STORE_PATH = os.environ.get("INTERVIEWER_DB", "/tmp/interviewer.db")
+_STORE_PATH = os.environ.get("INTERVIEW_KIT_DB", "/tmp/interview_kit.db")
 
 if TYPE_CHECKING:
     from livekit.agents import JobContext

@@ -4,26 +4,26 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from interviewer import (
+from interview_kit import (
     Background,
     Engine,
     EvalResult,
     Goal,
     Persona,
 )
-from interviewer.loop.extract import derive_extract_with_llm
-from interviewer.loop.runner import run_loop
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.memory import InMemoryConversationStore
-from interviewer.testing.fake_llm import FakeLLMClient
-from interviewer.testing.simulators import ScriptedSimulator
-from interviewer.types.config import Conversation
-from interviewer.types.runtime import Turn
+from interview_kit.loop.extract import derive_extract_with_llm
+from interview_kit.loop.runner import run_loop
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.stores.memory import InMemoryConversationStore
+from interview_kit.testing.fake_llm import FakeLLMClient
+from interview_kit.testing.simulators import ScriptedSimulator
+from interview_kit.types.config import Conversation
+from interview_kit.types.runtime import Turn
 
 
 def _persona() -> Persona:
     return Persona(
-        system_prompt="You are an interviewer.", style="neutral", voice_id="v"
+        system_prompt="You are an interview_kit.", style="neutral", voice_id="v"
     )
 
 

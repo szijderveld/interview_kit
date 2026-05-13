@@ -7,9 +7,9 @@ from typing import Any
 import httpx
 import pytest
 
-from interviewer import SessionEvent
-from interviewer.protocols import EventSink
-from interviewer.sinks.webhook import WebhookEventSink
+from interview_kit import SessionEvent
+from interview_kit.protocols import EventSink
+from interview_kit.sinks.webhook import WebhookEventSink
 
 
 def _ts() -> datetime:

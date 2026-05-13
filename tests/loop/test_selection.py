@@ -5,14 +5,14 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from interviewer.loop.selection import select_next_goal
-from interviewer.types.config import Background, Conversation, Goal, Persona
-from interviewer.types.runtime import GoalStatus, GoalStatusValue
+from interview_kit.loop.selection import select_next_goal
+from interview_kit.types.config import Background, Conversation, Goal, Persona
+from interview_kit.types.runtime import GoalStatus, GoalStatusValue
 
 
 def _persona() -> Persona:
     return Persona(
-        system_prompt="You are an interviewer.",
+        system_prompt="You are an interview_kit.",
         style="neutral",
         voice_id="voice-1",
     )

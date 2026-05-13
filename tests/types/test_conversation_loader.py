@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 import yaml
 
-from interviewer import Conversation
+from interview_kit import Conversation
 
 
 def _conversation_payload() -> dict[str, Any]:

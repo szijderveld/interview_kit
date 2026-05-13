@@ -51,3 +51,10 @@ htmlcov/
 # Local Claude state (keep .claude/commands/ in repo; ignore anything else)
 .claude/settings.local.json
 .claude/projects/
+.claude
+
+
+# Internal planning (not for publication)
+SCOPE.md
+PLAN.md
+DECISIONS.md

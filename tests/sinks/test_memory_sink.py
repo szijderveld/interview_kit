@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from interviewer import SessionEvent
-from interviewer.protocols import EventSink
-from interviewer.sinks.memory import InMemoryEventSink
+from interview_kit import SessionEvent
+from interview_kit.protocols import EventSink
+from interview_kit.sinks.memory import InMemoryEventSink
 
 
 def _ts(seconds: int) -> datetime:

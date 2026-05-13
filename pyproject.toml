@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "interview-kit"
+name = "interview_kit"
 version = "0.2.0"
 description = "Adaptive voice-interview engine."
 readme = "README.md"
@@ -31,14 +31,14 @@ dependencies = [
 ]
 
 [project.scripts]
-interviewer = "interviewer.cli:main"
+interview_kit = "interview_kit.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/szijderveld/interviewer"
-Documentation = "https://github.com/szijderveld/interviewer/blob/main/docs/integration.md"
-Issues = "https://github.com/szijderveld/interviewer/issues"
-Changelog = "https://github.com/szijderveld/interviewer/blob/main/CHANGELOG.md"
-Source = "https://github.com/szijderveld/interviewer"
+Homepage = "https://github.com/szijderveld/interview_kit"
+Documentation = "https://github.com/szijderveld/interview_kit/blob/main/docs/integration.md"
+Issues = "https://github.com/szijderveld/interview_kit/issues"
+Changelog = "https://github.com/szijderveld/interview_kit/blob/main/CHANGELOG.md"
+Source = "https://github.com/szijderveld/interview_kit"
 
 [project.optional-dependencies]
 voice = [
@@ -58,7 +58,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/interviewer"]
+packages = ["src/interview_kit"]
 
 [tool.uv]
 required-environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]
@@ -81,7 +81,7 @@ ignore_missing_imports = true
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
-module = ["interviewer.voice.*"]
+module = ["interview_kit.voice.*"]
 # voice/* subclasses livekit-agents framework classes; with
 # follow_imports=skip on livekit.*, those bases resolve to Any.
 disallow_subclassing_any = false

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from interviewer.loop.phrasing import PhrasingFailure, validate_voice_phrasing
+from interview_kit.loop.phrasing import PhrasingFailure, validate_voice_phrasing
 
 
 def test_happy_case_short_single_question() -> None:

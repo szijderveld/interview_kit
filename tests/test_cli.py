@@ -1,4 +1,4 @@
-"""Tests for the ``interviewer`` console script (Step 20)."""
+"""Tests for the ``interview_kit`` console script (Step 20)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from interviewer import cli
+from interview_kit import cli
 
 _FIXTURE_YAML = Path(__file__).parent / "fixtures" / "cli_simulate.yaml"
 
@@ -39,7 +39,7 @@ def test_version_flag_prints_package_version(
         cli.main(["--version"])
     assert exc_info.value.code == 0
     captured = capsys.readouterr()
-    assert "interview-kit" in captured.out
+    assert "interview_kit" in captured.out
 
 
 def test_missing_command_exits_nonzero(

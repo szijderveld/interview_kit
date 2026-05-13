@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from interviewer.llm.prompts import (
+from interview_kit.llm.prompts import (
     build_compose_user_message,
     build_evaluate_user_message,
     build_extract_user_message,
@@ -19,8 +19,8 @@ from interviewer.llm.prompts import (
     format_full_transcript,
     format_transcript_window,
 )
-from interviewer.types.config import Background, Conversation, Goal, Persona
-from interviewer.types.runtime import EvalResult, Turn, TurnContext
+from interview_kit.types.config import Background, Conversation, Goal, Persona
+from interview_kit.types.runtime import EvalResult, Turn, TurnContext
 
 
 def _conv() -> Conversation:

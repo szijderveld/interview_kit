@@ -15,10 +15,10 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from interviewer import Background, Goal, Persona
-from interviewer.protocols import ConversationStore
-from interviewer.stores.memory import InMemoryConversationStore
-from interviewer.stores.sqlite import SQLiteConversationStore
+from interview_kit import Background, Goal, Persona
+from interview_kit.protocols import ConversationStore
+from interview_kit.stores.memory import InMemoryConversationStore
+from interview_kit.stores.sqlite import SQLiteConversationStore
 
 # ---------- Conversation template: engineer interviewing engineer ----------
 

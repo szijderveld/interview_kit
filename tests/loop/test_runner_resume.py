@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from interviewer import (
+from interview_kit import (
     Background,
     Engine,
     EvalResult,
@@ -24,18 +24,18 @@ from interviewer import (
     Persona,
     SessionState,
 )
-from interviewer.loop.resume import RESUME_ACK
-from interviewer.loop.runner import run_loop
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.memory import InMemoryConversationStore
-from interviewer.testing.fake_llm import FakeLLMClient
-from interviewer.testing.simulators import ScriptedSimulator
-from interviewer.types.runtime import Turn
+from interview_kit.loop.resume import RESUME_ACK
+from interview_kit.loop.runner import run_loop
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.stores.memory import InMemoryConversationStore
+from interview_kit.testing.fake_llm import FakeLLMClient
+from interview_kit.testing.simulators import ScriptedSimulator
+from interview_kit.types.runtime import Turn
 
 
 def _persona() -> Persona:
     return Persona(
-        system_prompt="You are an interviewer.", style="neutral", voice_id="v"
+        system_prompt="You are an interview_kit.", style="neutral", voice_id="v"
     )
 
 

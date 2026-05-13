@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from interviewer import Engine
-from interviewer.llm.anthropic import AnthropicLLMClient
-from interviewer.sinks.memory import InMemoryEventSink
-from interviewer.stores.memory import InMemoryConversationStore
+from interview_kit import Engine
+from interview_kit.llm.anthropic import AnthropicLLMClient
+from interview_kit.sinks.memory import InMemoryEventSink
+from interview_kit.stores.memory import InMemoryConversationStore
 
 
 def test_with_defaults_wires_in_memory_components_and_anthropic_llm() -> None:

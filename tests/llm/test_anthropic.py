@@ -16,9 +16,9 @@ from typing import Any
 
 import pytest
 
-from interviewer.llm.anthropic import AnthropicLLMClient, Usage
-from interviewer.types.config import Background, Conversation, Goal, Persona
-from interviewer.types.runtime import EvalResult, Turn, TurnContext
+from interview_kit.llm.anthropic import AnthropicLLMClient, Usage
+from interview_kit.types.config import Background, Conversation, Goal, Persona
+from interview_kit.types.runtime import EvalResult, Turn, TurnContext
 
 # ---------- SDK fakes ----------
 
