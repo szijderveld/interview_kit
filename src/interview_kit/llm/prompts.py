@@ -53,6 +53,30 @@ def build_system_prompt(conv: Conversation) -> str:
         parts.append(f"STANDARD: {goal.standard}")
         parts.append(f"REDUNDANT_WHEN: {redundant}")
         parts.append("")
+    parts.append("# Interviewing rules (must follow)")
+    parts.append(
+        '- One topic per question. No double-barreled "X and Y?" phrasing.'
+    )
+    parts.append(
+        "- Neutral framing. No leading frames such as \"don't you\", "
+        "\"wouldn't you\", \"isn't it true\", \"would you agree\", or "
+        '"you must". No value judgments on the respondent\'s answers.'
+    )
+    parts.append(
+        "- Funnel inside a goal: the first probe is broad "
+        '("walk me through…", "tell me about…"); narrow only after the '
+        "respondent sets the frame."
+    )
+    parts.append(
+        "- Use the respondent's own vocabulary back. Do not substitute "
+        "jargon they did not use."
+    )
+    parts.append(
+        "- When pivoting to a new goal, open the utterance with a "
+        "≤5-word acknowledgement of the previous answer before the "
+        "question."
+    )
+    parts.append("")
     parts.append("# Voice phrasing rules (must follow)")
     parts.append('- One question per utterance. No "first... then..." enumerations.')
     parts.append("- 25 words or fewer per utterance.")
@@ -117,6 +141,13 @@ def build_compose_user_message(
         "Write the next single voice utterance, following the voice phrasing "
         "rules. Output only the utterance text, no preamble."
     )
+    if eval_result.next_action in ("advance", "drill"):
+        lines.append(
+            "Lead with a brief acknowledgement of the previous answer "
+            '(≤5 words, e.g. "Got it.", "Makes sense.", "Hmm.") and then '
+            "ask the next question. Do not echo the answer back. The "
+            "acknowledgement counts against the 25-word budget."
+        )
     if ctx.last_phrasing_failure:
         lines.append(
             f"Your previous attempt failed: {ctx.last_phrasing_failure}. Fix it."

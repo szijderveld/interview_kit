@@ -64,9 +64,34 @@ def test_system_prompt_contains_all_section_headers() -> None:
         "# Why you are talking to this person",
         "# Who they are",
         "# What you are trying to find out",
+        "# Interviewing rules",
         "# Voice phrasing rules",
     ):
         assert header in prompt
+
+
+def test_system_prompt_interviewing_rules_appear_between_goals_and_phrasing() -> None:
+    prompt = build_system_prompt(_conv())
+    goals_idx = prompt.index("# What you are trying to find out")
+    rules_idx = prompt.index("# Interviewing rules")
+    phrasing_idx = prompt.index("# Voice phrasing rules")
+    assert goals_idx < rules_idx < phrasing_idx
+
+
+def test_system_prompt_forbids_leading_frames() -> None:
+    import re
+
+    prompt = build_system_prompt(_conv())
+    # The block must explicitly call out leading frames as forbidden.
+    assert re.search(r"don't you", prompt) is not None
+    assert re.search(r"would you agree", prompt) is not None
+
+
+def test_system_prompt_includes_funnel_and_vocabulary_and_pivot_rules() -> None:
+    prompt = build_system_prompt(_conv())
+    assert "Funnel" in prompt
+    assert "vocabulary" in prompt
+    assert "acknowledgement" in prompt
 
 
 def test_system_prompt_lists_every_goal_id_and_intent() -> None:
@@ -193,6 +218,70 @@ def test_compose_user_message_includes_eval_signals() -> None:
     assert "next_action: drill" in msg
     assert "interesting_tangent: kanban board snag" in msg
     assert "Output only the utterance text" in msg
+
+
+def test_compose_user_message_includes_ack_instruction_on_advance() -> None:
+    conv = _conv()
+    ctx = TurnContext(
+        conversation=conv,
+        transcript=[_turn(0, "respondent", "a")],
+        active_goal=conv.goals[0],
+        goal_statuses=[],
+        retries_used_on_active=0,
+        tangent_followups_used=0,
+        total_turns=1,
+    )
+    eval_result = EvalResult(active_goal_status="meets", next_action="advance")
+    msg = build_compose_user_message(ctx, eval_result, max_transcript_turns=12)
+    assert "Lead with a brief acknowledgement" in msg
+
+
+def test_compose_user_message_includes_ack_instruction_on_drill() -> None:
+    conv = _conv()
+    ctx = TurnContext(
+        conversation=conv,
+        transcript=[_turn(0, "respondent", "a")],
+        active_goal=conv.goals[0],
+        goal_statuses=[],
+        retries_used_on_active=0,
+        tangent_followups_used=0,
+        total_turns=1,
+    )
+    eval_result = EvalResult(active_goal_status="partial", next_action="drill")
+    msg = build_compose_user_message(ctx, eval_result, max_transcript_turns=12)
+    assert "Lead with a brief acknowledgement" in msg
+
+
+def test_compose_user_message_omits_ack_on_retry() -> None:
+    conv = _conv()
+    ctx = TurnContext(
+        conversation=conv,
+        transcript=[_turn(0, "respondent", "a")],
+        active_goal=conv.goals[0],
+        goal_statuses=[],
+        retries_used_on_active=0,
+        tangent_followups_used=0,
+        total_turns=1,
+    )
+    eval_result = EvalResult(active_goal_status="partial", next_action="retry")
+    msg = build_compose_user_message(ctx, eval_result, max_transcript_turns=12)
+    assert "acknowledgement" not in msg
+
+
+def test_compose_user_message_omits_ack_on_close() -> None:
+    conv = _conv()
+    ctx = TurnContext(
+        conversation=conv,
+        transcript=[_turn(0, "respondent", "a")],
+        active_goal=conv.goals[0],
+        goal_statuses=[],
+        retries_used_on_active=0,
+        tangent_followups_used=0,
+        total_turns=1,
+    )
+    eval_result = EvalResult(active_goal_status="meets", next_action="close")
+    msg = build_compose_user_message(ctx, eval_result, max_transcript_turns=12)
+    assert "acknowledgement" not in msg
 
 
 def test_compose_user_message_surfaces_phrasing_failure_on_regen() -> None:
