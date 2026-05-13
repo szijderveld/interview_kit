@@ -455,7 +455,7 @@ def _apply_eval(
             )
     if eval_result.next_action == "retry":
         state.retries_used_on_active += 1
-    elif eval_result.next_action == "drill":
+    elif eval_result.next_action == "probe":
         state.tangent_followups_used += 1
     # advance / close: no in-place counter change. retries reset on goal change.
 

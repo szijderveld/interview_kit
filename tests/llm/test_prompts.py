@@ -209,14 +209,16 @@ def test_compose_user_message_includes_eval_signals() -> None:
         total_turns=1,
     )
     eval_result = EvalResult(
-        active_goal_status="meets",
-        next_action="drill",
+        active_goal_status="partial",
+        next_action="probe",
+        probe_kind="elaborate",
         interesting_tangent="kanban board snag",
         rationale="ok",
     )
     msg = build_compose_user_message(ctx, eval_result, max_transcript_turns=12)
-    assert "active_goal_status: meets" in msg
-    assert "next_action: drill" in msg
+    assert "active_goal_status: partial" in msg
+    assert "next_action: probe" in msg
+    assert "probe_kind: elaborate" in msg
     assert "interesting_tangent: kanban board snag" in msg
     assert "Output only the utterance text" in msg
 
@@ -237,7 +239,7 @@ def test_compose_user_message_includes_ack_instruction_on_advance() -> None:
     assert "Lead with a brief acknowledgement" in msg
 
 
-def test_compose_user_message_includes_ack_instruction_on_drill() -> None:
+def test_compose_user_message_includes_ack_instruction_on_probe() -> None:
     conv = _conv()
     ctx = TurnContext(
         conversation=conv,
@@ -248,9 +250,62 @@ def test_compose_user_message_includes_ack_instruction_on_drill() -> None:
         tangent_followups_used=0,
         total_turns=1,
     )
-    eval_result = EvalResult(active_goal_status="partial", next_action="drill")
+    eval_result = EvalResult(
+        active_goal_status="partial",
+        next_action="probe",
+        probe_kind="example",
+    )
     msg = build_compose_user_message(ctx, eval_result, max_transcript_turns=12)
     assert "Lead with a brief acknowledgement" in msg
+
+
+@pytest.mark.parametrize(
+    ("probe_kind", "expected_substring"),
+    [
+        ("clarify", "restate or define"),
+        ("example", "one concrete example"),
+        ("importance", "why that matters"),
+        ("contrast", "compares to another case"),
+        ("elaborate", "keep going"),
+    ],
+)
+def test_compose_user_message_probe_shape_per_kind(
+    probe_kind: str, expected_substring: str
+) -> None:
+    conv = _conv()
+    ctx = TurnContext(
+        conversation=conv,
+        transcript=[_turn(0, "respondent", "a")],
+        active_goal=conv.goals[0],
+        goal_statuses=[],
+        retries_used_on_active=0,
+        tangent_followups_used=0,
+        total_turns=1,
+    )
+    eval_result = EvalResult(
+        active_goal_status="partial",
+        next_action="probe",
+        probe_kind=probe_kind,  # type: ignore[arg-type]
+    )
+    msg = build_compose_user_message(ctx, eval_result, max_transcript_turns=12)
+    assert "Probe shape:" in msg
+    assert expected_substring in msg
+
+
+def test_evaluate_user_message_lists_probe_kinds() -> None:
+    conv = _conv()
+    ctx = TurnContext(
+        conversation=conv,
+        transcript=[_turn(0, "respondent", "a")],
+        active_goal=conv.goals[0],
+        goal_statuses=[],
+        retries_used_on_active=0,
+        tangent_followups_used=0,
+        total_turns=1,
+    )
+    msg = build_evaluate_user_message(ctx, max_transcript_turns=12)
+    for kind in ("clarify", "example", "importance", "contrast", "elaborate"):
+        assert kind in msg
 
 
 def test_compose_user_message_omits_ack_on_retry() -> None:

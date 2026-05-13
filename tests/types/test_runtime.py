@@ -272,6 +272,30 @@ def test_eval_result_rejects_unknown_action() -> None:
         )
 
 
+def test_eval_result_probe_requires_probe_kind() -> None:
+    with pytest.raises(ValidationError):
+        EvalResult(active_goal_status="partial", next_action="probe")
+
+
+def test_eval_result_probe_kind_requires_probe_action() -> None:
+    with pytest.raises(ValidationError):
+        EvalResult(
+            active_goal_status="meets",
+            next_action="advance",
+            probe_kind="elaborate",
+        )
+
+
+def test_eval_result_probe_with_kind_round_trip() -> None:
+    er = EvalResult(
+        active_goal_status="partial",
+        next_action="probe",
+        probe_kind="clarify",
+        rationale="hedged answer",
+    )
+    assert EvalResult.model_validate_json(er.model_dump_json()) == er
+
+
 # ---------- SessionEvent ----------------------------------------------------
 
 

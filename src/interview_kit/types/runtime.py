@@ -11,14 +11,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from interview_kit.types.config import Conversation, Goal
 from interview_kit.types.state import SessionState
 
 GoalStatusValue = Literal["pending", "meets", "partial", "skipped_redundant", "gave_up"]
 EvalGoalStatusValue = Literal["pending", "meets", "partial", "gave_up"]
-NextAction = Literal["advance", "retry", "drill", "close"]
+NextAction = Literal["advance", "retry", "probe", "close"]
+ProbeKind = Literal["clarify", "example", "importance", "contrast", "elaborate"]
 Speaker = Literal["agent", "respondent"]
 
 
@@ -149,4 +150,13 @@ class EvalResult(BaseModel):
     redundant_goal_ids: list[str] = Field(default_factory=list)
     interesting_tangent: str | None = None
     next_action: NextAction
+    probe_kind: ProbeKind | None = None
     rationale: str = ""
+
+    @model_validator(mode="after")
+    def _probe_kind_matches_action(self) -> EvalResult:
+        if self.next_action == "probe" and self.probe_kind is None:
+            raise ValueError("probe_kind is required when next_action='probe'")
+        if self.next_action != "probe" and self.probe_kind is not None:
+            raise ValueError("probe_kind must be None unless next_action='probe'")
+        return self

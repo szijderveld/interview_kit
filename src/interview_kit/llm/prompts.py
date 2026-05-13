@@ -107,6 +107,28 @@ def format_full_transcript(turns: list[Turn]) -> str:
     return "\n".join(lines)
 
 
+_PROBE_KIND_GUIDE = (
+    "When next_action='probe', pick a probe_kind:\n"
+    "- clarify: the answer was vague or hedged; ask them to restate or define what they meant.\n"
+    "- example: ask for one concrete example to make an abstract claim concrete.\n"
+    "- importance: ask why that matters to them.\n"
+    "- contrast: ask how it compares to another case they could speak to.\n"
+    "- elaborate: ask them to keep going / what happened next."
+)
+
+
+_PROBE_KIND_SHAPES: dict[str, str] = {
+    "clarify": (
+        "Ask the respondent to restate or define what they meant — pick the "
+        "one word or phrase that was vague."
+    ),
+    "example": "Ask for one concrete example.",
+    "importance": "Ask why that matters to them.",
+    "contrast": "Ask how it compares to another case.",
+    "elaborate": "Ask them to keep going — what happened next.",
+}
+
+
 def build_evaluate_user_message(ctx: TurnContext, *, max_transcript_turns: int) -> str:
     """User message for evaluate_turn — narrow context plus active goal callout."""
     if ctx.active_goal is None:
@@ -117,6 +139,7 @@ def build_evaluate_user_message(ctx: TurnContext, *, max_transcript_turns: int) 
         f"{transcript}\n\n"
         f"The active goal is: {ctx.active_goal.id} — {ctx.active_goal.intent}\n"
         "The respondent's most recent answer is the final RESPONDENT turn above.\n\n"
+        f"{_PROBE_KIND_GUIDE}\n\n"
         "Call the `evaluate` tool with your assessment."
     )
 
@@ -134,14 +157,20 @@ def build_compose_user_message(
         f"- active_goal_status: {eval_result.active_goal_status}",
         f"- next_action: {eval_result.next_action}",
     ]
-    if eval_result.next_action == "drill" and eval_result.interesting_tangent:
-        lines.append(f"- interesting_tangent: {eval_result.interesting_tangent}")
+    if eval_result.next_action == "probe":
+        if eval_result.probe_kind is not None:
+            lines.append(f"- probe_kind: {eval_result.probe_kind}")
+        if eval_result.interesting_tangent:
+            lines.append(f"- interesting_tangent: {eval_result.interesting_tangent}")
     lines.append("")
     lines.append(
         "Write the next single voice utterance, following the voice phrasing "
         "rules. Output only the utterance text, no preamble."
     )
-    if eval_result.next_action in ("advance", "drill"):
+    if eval_result.next_action == "probe" and eval_result.probe_kind is not None:
+        shape = _PROBE_KIND_SHAPES[eval_result.probe_kind]
+        lines.append(f"Probe shape: {shape}")
+    if eval_result.next_action in ("advance", "probe"):
         lines.append(
             "Lead with a brief acknowledgement of the previous answer "
             '(≤5 words, e.g. "Got it.", "Makes sense.", "Hmm.") and then '
