@@ -8,14 +8,14 @@ version = "0.2.0"
 description = "Adaptive voice-interview engine."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "szijderveld", email = "szijderveld9@gmail.com" }]
 keywords = ["interview", "voice-agent", "livekit", "anthropic", "llm"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
