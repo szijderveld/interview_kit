@@ -48,10 +48,8 @@ htmlcov/
 .env.local
 .env.*.local
 
-# Local Claude state (keep .claude/commands/ in repo; ignore anything else)
-.claude/settings.local.json
-.claude/projects/
-.claude
+# Local Claude state
+.claude/
 
 
 # Internal planning (not for publication)
