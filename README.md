@@ -16,17 +16,31 @@ for the full design contract.
 
 ## Install
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.11+.
+
+```sh
+pip install interview-kit
+```
+
+The voice extra pulls in LiveKit and the audio plugins:
+
+```sh
+pip install "interview-kit[voice]"
+```
+
+The distribution name on PyPI is `interview-kit`, but the import name is
+`interviewer`:
+
+```python
+import interviewer
+```
+
+### Develop from source
+
+Requires [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync --all-extras --dev
-```
-
-The simulator-only install path (no voice) skips the LiveKit and audio
-plugin extras:
-
-```sh
-uv sync
 ```
 
 ## Quickstart — simulated interview (no API keys)

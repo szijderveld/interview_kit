@@ -697,3 +697,24 @@ plan review. They are binding for all subsequent steps.
   ``llm/schemas``, and ``voice/livekit_entry`` are NOT breaking.
   Anything a consumer pins onto from these modules is at their own
   risk; integration tests in this repo are allowed to do so.
+
+## Step 18 — distribution renamed to `interview-kit`; import path unchanged
+
+- **Decision:** PyPI distribution name is `interview-kit`, but the
+  Python package directory stays `src/interviewer/` and consumers still
+  `import interviewer`.
+- **Why:** `interviewer` on PyPI is already taken; renaming the import
+  path would break every existing consumer for no benefit.
+- **Affects:** Step 19+ docs and CLI must use `pip install interview-kit`
+  on the install line and `import interviewer` in code. The wheel
+  filename pattern is `interview_kit-<version>-*.whl` (underscored).
+
+## Step 18 — added `license-files = ["LICENSE"]` to `[project]`
+
+- **Decision:** Declared the LICENSE file explicitly via
+  `project.license-files` rather than relying on hatch auto-detection.
+- **Why:** PEP 639 / modern build backends prefer explicit license-file
+  declarations; without it some tooling emits metadata warnings and the
+  file may not be bundled in the sdist.
+- **Affects:** future bumps to the LICENSE filename must update this
+  field; do not remove it when reorganizing project metadata.

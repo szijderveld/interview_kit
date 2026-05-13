@@ -1440,3 +1440,226 @@ exported API surface matches SCOPE.md exactly.
 
 **On success:** mark complete, commit `step 17: final pass and 0.1.0
 release`. Tag `v0.1.0`.
+
+---
+
+### Step 18: Rename to `interview-kit` + PyPI metadata polish
+
+- [x] complete
+
+**Goal:** Make the package PyPI-ready. The PyPI distribution name
+`interviewer` is already taken, so the distribution is renamed to
+`interview-kit`. The Python import path remains `interviewer` — no
+consumer code changes.
+
+**Prerequisites:** Step 17.
+
+**Read first:**
+- `pyproject.toml`
+- `README.md` (install section)
+
+**Deliverables:**
+
+- `pyproject.toml`:
+  - `name = "interview-kit"` (distribution name only; package dir stays
+    `src/interviewer/`).
+  - Real `authors = [{ name = "...", email = "..." }]`.
+  - `keywords = ["interview", "voice-agent", "livekit", "anthropic", "llm"]`.
+  - `classifiers` — at minimum: Development Status, Intended Audience,
+    License, Programming Language :: Python :: 3.11/3.12, Topic ::
+    Scientific/Engineering :: Artificial Intelligence, Typing :: Typed.
+  - `[project.urls]` — Homepage, Documentation, Issues, Changelog,
+    Source.
+  - Version bumped to `0.2.0`.
+- `LICENSE` file at repo root containing the MIT license text (matches
+  the `license = "MIT"` field).
+- `README.md` install section updated to `pip install interview-kit`
+  (and `pip install "interview-kit[voice]"` for the voice extra). Note
+  that the import name is still `import interviewer`.
+- `CHANGELOG.md` — new entry `0.2.0 — renamed distribution to
+  interview-kit; PyPI metadata.`
+
+**Acceptance criteria:**
+
+- `uv build` produces `interview_kit-0.2.0-*.whl` and `.tar.gz`
+  containing the `interviewer/` package.
+- `pip install dist/interview_kit-0.2.0-*.whl` into a clean venv, then
+  `python -c "import interviewer; print(interviewer.Engine)"` succeeds.
+- `twine check dist/*` passes (no metadata warnings).
+- All existing tests still pass.
+
+**Constraints:**
+
+- Do NOT rename the `interviewer/` directory or any imports inside the
+  package. This is a *distribution* rename only.
+- Do not publish to PyPI in this step — that's a separate operator
+  action.
+
+**On success:** mark complete, commit `step 18: rename to interview-kit
+and PyPI metadata`.
+
+---
+
+### Step 19: Ergonomic constructors — `Conversation.from_yaml` and `Engine.with_defaults`
+
+- [ ] complete
+
+**Goal:** Shrink the first-time-user code path from ~30 lines of
+Pydantic wiring to ~5 lines. Two helpers, both additive.
+
+**Prerequisites:** Step 18.
+
+**Read first:**
+- `src/interviewer/types/config.py` (Persona, Background, Goal, Conversation)
+- `src/interviewer/engine.py` (`Engine.__init__`)
+- `examples/simulated.py` (the boilerplate it eliminates)
+
+**Deliverables:**
+
+- `Conversation.from_dict(data: dict) -> Conversation` and
+  `Conversation.from_yaml(path: str | Path) -> Conversation` classmethods
+  on `interviewer.types.config.Conversation`. YAML loader uses
+  `pyyaml` — add it to core `dependencies` (small, ubiquitous). The dict
+  shape mirrors the Pydantic field names; nested `persona`,
+  `background`, and `goals[]` deserialize through their own
+  `model_validate`.
+- `Engine.with_defaults(*, anthropic_api_key: str | None = None) -> Engine`
+  classmethod: wires `InMemoryConversationStore`, `InMemoryEventSink`,
+  and `AnthropicLLMClient` (reading `ANTHROPIC_API_KEY` from env if
+  arg is None; raises `ValueError` if neither is set). No `livekit`
+  argument — voice setups go through the full constructor.
+- Unit tests:
+  - `tests/types/test_conversation_loader.py` — round-trips a YAML
+    fixture through `from_yaml` and back via `model_dump`.
+  - `tests/test_engine_defaults.py` — `with_defaults()` produces an
+    `Engine` whose `store`, `events`, `llm` are the expected types;
+    missing key raises.
+
+**Acceptance criteria:**
+
+- A 5-line snippet works (documented in the next step's README):
+  ```python
+  from interviewer import Engine, Conversation
+  engine = Engine.with_defaults()
+  conv = Conversation.from_yaml("conversation.yaml")
+  conv = await engine.create_conversation(**conv.model_dump(exclude={"id"}))
+  ```
+- `uv run pytest && uv run mypy src/ && uv run ruff check .` clean.
+
+**Constraints:**
+
+- Do not change existing `Engine.__init__` or `Conversation` fields.
+  Both helpers are pure additions.
+- `pyyaml` only — do not pull in a heavier config framework.
+
+**On success:** mark complete, commit `step 19: yaml loader and
+with_defaults`.
+
+---
+
+### Step 20: CLI entry point + shipped examples
+
+- [ ] complete
+
+**Goal:** `pip install interview-kit` produces a runnable `interviewer`
+command. Pip users get a working demo without cloning the repo.
+
+**Prerequisites:** Step 19.
+
+**Read first:**
+- `examples/simulated.py`
+- `pyproject.toml` (for the `[project.scripts]` block)
+
+**Deliverables:**
+
+- `src/interviewer/examples/__init__.py` and
+  `src/interviewer/examples/simulated.py` — the simulator demo,
+  importable as a module. The repo-root `examples/simulated.py` becomes
+  a thin shim that imports and invokes it (kept for the README's
+  `uv run python examples/...` story).
+- `src/interviewer/cli.py` exposing `main(argv: list[str] | None = None)`
+  with subcommands:
+  - `interviewer demo` — runs the simulator example (no API key required).
+  - `interviewer simulate <path/to/conversation.yaml>` — loads a
+    conversation via `Conversation.from_yaml`, runs
+    `engine.simulate_session` against a `ScriptedSimulator` driven by an
+    optional `--responses` file (or `RamblyKnowledgeableSimulator` by
+    default when `--use-anthropic` is set), prints transcript + extract.
+  - `interviewer --version` prints the package version.
+- `pyproject.toml`:
+  - `[project.scripts] interviewer = "interviewer.cli:main"`.
+  - Add `src/interviewer/examples/` to the wheel's included files (the
+    `packages = ["src/interviewer"]` setting already covers it; verify).
+- `tests/test_cli.py` — invokes `cli.main(["demo"])` and asserts non-zero
+  output containing "TRANSCRIPT".
+
+**Acceptance criteria:**
+
+- After `pip install dist/interview_kit-0.2.0-*.whl` in a clean venv,
+  `interviewer demo` exits 0 and prints a transcript + extract.
+- `interviewer simulate <fixture.yaml>` runs against a YAML conversation
+  shipped under `tests/fixtures/`.
+- CLI tests pass.
+
+**Constraints:**
+
+- The CLI is a thin shim over the public API — no business logic moves
+  into `cli.py`. If `cli.py` grows past ~150 lines, factor helpers back
+  into the library.
+- Keep the dependency surface unchanged (argparse only; no Click/Typer).
+
+**On success:** mark complete, commit `step 20: cli and shipped
+examples`.
+
+---
+
+### Step 21: README rewrite around `pip install` + docs URL
+
+- [ ] complete
+
+**Goal:** A pip user lands on the PyPI page, sees an install command and
+a 10-line snippet that works, and is running in 60 seconds. The uv
+contributor workflow moves to `CONTRIBUTING.md`.
+
+**Prerequisites:** Step 20.
+
+**Read first:**
+- Current `README.md`
+- `docs/integration.md`
+- The acceptance snippets from Steps 19 and 20.
+
+**Deliverables:**
+
+- `README.md` — rewritten in this order:
+  1. One-paragraph "what this is."
+  2. `pip install interview-kit` (and `[voice]` extra).
+  3. `interviewer demo` — zero-config smoke test.
+  4. ~10-line Python quickstart using `Engine.with_defaults()` +
+     `Conversation.from_yaml()` + `engine.simulate_session(...)`.
+  5. Pointer to `docs/integration.md` for the production / voice path.
+  6. Pointer to `CONTRIBUTING.md` for development setup.
+- `CONTRIBUTING.md` — new file. Carries the existing `uv sync
+  --all-extras --dev`, `uv run pytest`, `uv run mypy`, `uv run ruff`
+  instructions, and the local-voice example walkthrough.
+- `pyproject.toml` `[project.urls].Documentation` points at the hosted
+  docs (or the GitHub `docs/integration.md` permalink if no MkDocs site
+  yet).
+- `CHANGELOG.md` — append to the 0.2.0 entry: `README rewritten around
+  pip install; CONTRIBUTING.md split out.`
+
+**Acceptance criteria:**
+
+- A reader who has never seen the repo can copy the install command and
+  the quickstart snippet into a fresh venv and see output in under
+  2 minutes (no API key required for the simulator path).
+- `docs/integration.md` is unchanged in content — it remains the
+  authoritative integration guide; the README only links to it.
+
+**Constraints:**
+
+- No emojis. No marketing language. Terse and accurate.
+- Do not duplicate content between README and `docs/integration.md` —
+  link, don't restate.
+
+**On success:** mark complete, commit `step 21: pip-install readme and
+contributing split`. Tag `v0.2.0`.
