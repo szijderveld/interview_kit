@@ -1615,7 +1615,7 @@ examples`.
 
 ### Step 21: README rewrite around `pip install` + docs URL
 
-- [ ] complete
+- [x] complete
 
 **Goal:** A pip user lands on the PyPI page, sees an install command and
 a 10-line snippet that works, and is running in 60 seconds. The uv
