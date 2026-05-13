@@ -30,6 +30,9 @@ dependencies = [
     "pyyaml>=6,<7",
 ]
 
+[project.scripts]
+interviewer = "interviewer.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/szijderveld/interviewer"
 Documentation = "https://github.com/szijderveld/interviewer/blob/main/docs/integration.md"

@@ -1559,7 +1559,7 @@ with_defaults`.
 
 ### Step 20: CLI entry point + shipped examples
 
-- [ ] complete
+- [x] complete
 
 **Goal:** `pip install interview-kit` produces a runnable `interviewer`
 command. Pip users get a working demo without cloning the repo.

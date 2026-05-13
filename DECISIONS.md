@@ -732,6 +732,38 @@ plan review. They are binding for all subsequent steps.
 - **Affects:** Step 20's CLI `simulate` subcommand can rely on YAML-supplied
   turn budgets flowing through `create_conversation` unchanged.
 
+## Step 20 — `interviewer demo` delegates to `interviewer.examples.simulated`
+
+- **Decision:** The shipped CLI's `demo` subcommand forwards to
+  `interviewer.examples.simulated.cli(argv)` rather than reimplementing
+  the demo wiring inside `cli.py`. The repo-root `examples/simulated.py`
+  is reduced to a thin shim doing the same.
+- **Why:** The plan caps `cli.py` at ~150 lines and forbids business
+  logic. Keeping the demo construction in one importable module means
+  the CLI and the contributor-facing `uv run python examples/...` story
+  share exactly the same code path.
+- **Affects:** Future demo variants should grow under
+  `src/interviewer/examples/`, not under `cli.py`. Tests target
+  `cli.main(["demo"])`, which transitively exercises the example.
+
+## Step 20 — `interviewer simulate` synthesizes FakeLLMClient inputs from goals
+
+- **Decision:** Without `--use-anthropic`, the `simulate` subcommand
+  builds a `FakeLLMClient` with one auto-generated "meets/advance"
+  eval and one templated utterance per goal in the loaded
+  `Conversation`, and seeds `ScriptedSimulator` with the contents of
+  `--responses` (or a baked-in default list).
+- **Why:** A YAML-driven simulation must run with zero API keys for
+  the acceptance test. The runner consumes exactly one eval and one
+  compose call per goal in the advance path, so the count is
+  deterministic from `len(conv.goals)` and avoids exposing internal
+  loop arithmetic to CLI users.
+- **Affects:** If the loop's per-goal call count ever changes (e.g., an
+  extra implicit closing eval), `_autoeval_results` /
+  `_autoutter_utterances` in `cli.py` must be revisited. Custom eval
+  paths (`partial`, `retry`, `drill`) are not reachable from the CLI
+  by design — operators wanting that should write a Python harness.
+
 ## Step 19 — `pyyaml` added to core dependencies, not an extra
 
 - **Decision:** `pyyaml>=6,<7` is in `[project].dependencies`, not behind a

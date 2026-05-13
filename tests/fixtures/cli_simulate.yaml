@@ -1,0 +1,18 @@
+id: conv-cli-fixture
+persona:
+  system_prompt: You are running a discovery interview about morning routines.
+  style: neutral
+  voice_id: demo-voice
+purpose: Understand the interviewee's morning routine.
+background:
+  interviewee_role: staff engineer
+  interviewee_expertise: end-to-end pipeline ownership
+goals:
+  - id: routine
+    intent: Map the morning routine
+    standard: At least two rituals named with timing.
+  - id: exceptions
+    intent: Find common exception paths
+    standard: At least one exception flow named.
+opening: Thanks for joining — tell me about your mornings.
+closing: That's everything I needed. Appreciate your time.
