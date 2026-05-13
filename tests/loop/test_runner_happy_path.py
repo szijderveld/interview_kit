@@ -196,3 +196,110 @@ async def test_redundancy_in_eval_marks_other_goals_skipped() -> None:
     assert by_id["g3"] == "pending"
     # Only 2 probes ran (g3 skipped) → 2 opening + 4 probes + 1 closing = 7.
     assert len(extract.full_transcript) == 7
+
+
+async def test_default_opening_used_when_conversation_opening_is_none() -> None:
+    """conv.opening = None → first agent utterance is DEFAULT_OPENING."""
+    from interview_kit.loop.openings import DEFAULT_OPENING
+
+    store = InMemoryConversationStore()
+    events = InMemoryEventSink()
+    llm = FakeLLMClient(
+        eval_results=[_eval_meets_advance("g1 covered")],
+        utterances=["What does a typical morning look like?"],
+    )
+    engine = Engine(store=store, events=events, llm=llm)
+    conv = await engine.create_conversation(
+        persona=Persona(
+            system_prompt="You are a discovery interview_kit.",
+            style="neutral",
+            voice_id="v1",
+        ),
+        purpose="Understand the process.",
+        background=Background(
+            interviewee_role="op", interviewee_expertise="ops"
+        ),
+        goals=[
+            Goal(id="g1", intent="Day's rituals.", standard="x"),
+        ],
+        opening=None,
+        closing="That's all I needed.",
+    )
+    simulator = ScriptedSimulator(["sure.", "standup at nine."])
+
+    extract = await engine.simulate_session(conv.id, simulator)
+
+    assert extract.full_transcript[0].speaker == "agent"
+    assert extract.full_transcript[0].text == DEFAULT_OPENING
+
+
+async def test_closing_recap_used_when_conversation_closing_is_none() -> None:
+    """conv.closing = None → final agent utterance comes from compose_closing_recap."""
+    store = InMemoryConversationStore()
+    events = InMemoryEventSink()
+    recap = "Thanks — your standup-at-nine detail was helpful."
+    llm = FakeLLMClient(
+        eval_results=[_eval_meets_advance("g1 covered")],
+        utterances=["What does a typical morning look like?"],
+        closings=[recap],
+    )
+    engine = Engine(store=store, events=events, llm=llm)
+    conv = await engine.create_conversation(
+        persona=Persona(
+            system_prompt="You are a discovery interview_kit.",
+            style="neutral",
+            voice_id="v1",
+        ),
+        purpose="Understand the process.",
+        background=Background(
+            interviewee_role="op", interviewee_expertise="ops"
+        ),
+        goals=[
+            Goal(id="g1", intent="Day's rituals.", standard="x"),
+        ],
+        opening="Hi.",
+        closing=None,
+    )
+    simulator = ScriptedSimulator(["sure.", "standup at nine."])
+
+    extract = await engine.simulate_session(conv.id, simulator)
+
+    assert extract.full_transcript[-1].speaker == "agent"
+    assert extract.full_transcript[-1].text == recap
+
+
+async def test_closing_recap_falls_back_to_default_when_phrasing_fails() -> None:
+    """Recap that fails phrasing twice → DEFAULT_CLOSING."""
+    from interview_kit.loop.runner import DEFAULT_CLOSING
+
+    store = InMemoryConversationStore()
+    events = InMemoryEventSink()
+    # Two over-25-word closings → phrasing fails twice → fallback.
+    bad_recap = " ".join(["word"] * 40)
+    llm = FakeLLMClient(
+        eval_results=[_eval_meets_advance("g1 covered")],
+        utterances=["What does a typical morning look like?"],
+        closings=[bad_recap, bad_recap],
+    )
+    engine = Engine(store=store, events=events, llm=llm)
+    conv = await engine.create_conversation(
+        persona=Persona(
+            system_prompt="You are a discovery interview_kit.",
+            style="neutral",
+            voice_id="v1",
+        ),
+        purpose="Understand the process.",
+        background=Background(
+            interviewee_role="op", interviewee_expertise="ops"
+        ),
+        goals=[
+            Goal(id="g1", intent="Day's rituals.", standard="x"),
+        ],
+        opening="Hi.",
+        closing=None,
+    )
+    simulator = ScriptedSimulator(["sure.", "standup at nine."])
+
+    extract = await engine.simulate_session(conv.id, simulator)
+
+    assert extract.full_transcript[-1].text == DEFAULT_CLOSING

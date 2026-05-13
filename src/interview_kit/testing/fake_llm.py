@@ -44,6 +44,7 @@ class FakeLLMClient:
         *,
         eval_results: list[EvalResult] | None = None,
         utterances: list[str] | None = None,
+        closings: list[str] | None = None,
         findings: list[Finding] | None = None,
         eval_failures: int = 0,
         compose_failures: int = 0,
@@ -51,6 +52,7 @@ class FakeLLMClient:
     ) -> None:
         self._eval_results: deque[EvalResult] = deque(eval_results or [])
         self._utterances: deque[str] = deque(utterances or [])
+        self._closings: deque[str] = deque(closings or [])
         self._findings: list[Finding] = list(findings or [])
         # Failure counters: each call decrements; while > 0, the method raises
         # so the runner's retry path is exercised. Set high (e.g., 100) to
@@ -83,6 +85,11 @@ class FakeLLMClient:
             raise RuntimeError("FakeLLMClient: compose_utterance queue exhausted")
         text = self._utterances.popleft()
         return _stream_chunks(text)
+
+    async def compose_closing_recap(self, ctx: TurnContext) -> str:
+        if self._closings:
+            return self._closings.popleft()
+        return "Thanks — appreciated your time and the detail you shared."
 
     async def derive_extract(
         self, transcript: list[Turn], conv: Conversation

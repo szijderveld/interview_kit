@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 import pytest
 
 from interview_kit.llm.prompts import (
+    build_closing_recap_user_message,
     build_compose_user_message,
     build_evaluate_user_message,
     build_extract_user_message,
@@ -299,6 +300,27 @@ def test_compose_user_message_surfaces_phrasing_failure_on_regen() -> None:
     eval_result = EvalResult(active_goal_status="meets", next_action="advance")
     msg = build_compose_user_message(ctx, eval_result, max_transcript_turns=12)
     assert "Your previous attempt failed: too_long" in msg
+
+
+def test_closing_recap_user_message_includes_transcript_and_recap_instruction() -> None:
+    conv = _conv()
+    ctx = TurnContext(
+        conversation=conv,
+        transcript=[
+            _turn(0, "agent", "What does a morning look like?"),
+            _turn(1, "respondent", "Standup at nine, then code review."),
+        ],
+        active_goal=None,
+        goal_statuses=[],
+        retries_used_on_active=0,
+        tangent_followups_used=0,
+        total_turns=2,
+    )
+    msg = build_closing_recap_user_message(ctx, max_transcript_turns=12)
+    assert "Standup at nine" in msg
+    assert "thanks" in msg.lower()
+    assert "25 words" in msg
+    assert "Output only the utterance text" in msg
 
 
 def test_extract_user_message_uses_full_transcript_with_indices() -> None:

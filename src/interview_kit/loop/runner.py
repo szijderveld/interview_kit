@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 from interview_kit.loop.extract import derive_extract_with_llm
 from interview_kit.loop.heuristics import detect_refusal_or_idk
+from interview_kit.loop.openings import DEFAULT_OPENING
 from interview_kit.loop.phrasing import validate_voice_phrasing
 from interview_kit.loop.resume import RESUME_ACK
 from interview_kit.loop.selection import select_next_goal
@@ -244,7 +245,23 @@ async def run_loop(
 
         last_active = active
 
-    closing_text = conv.closing or DEFAULT_CLOSING
+    if conv.closing is not None:
+        closing_text = conv.closing
+    else:
+        closing_transcript = await engine.store.list_turns(session_id)
+        closing_ctx = TurnContext(
+            conversation=conv,
+            transcript=closing_transcript,
+            active_goal=None,
+            goal_statuses=list(state.goal_status_table.values()),
+            retries_used_on_active=state.retries_used_on_active,
+            tangent_followups_used=state.tangent_followups_used,
+            total_turns=state.total_turns,
+            last_phrasing_failure=None,
+        )
+        closing_text = await _compose_closing_recap_with_fallback(
+            engine.llm, closing_ctx
+        )
     await _record_agent_turn(
         engine, session_id, conv, state, closing_text, addressed=[]
     )
@@ -337,13 +354,13 @@ async def _fresh_bootstrap(
         "respondent_joined",
         {"simulator": simulator.persona_name()},
     )
-    if conv.opening:
-        await _record_agent_turn(
-            engine, session_id, conv, state, conv.opening, addressed=[]
-        )
-        await _record_respondent_turn(
-            engine, session_id, conv, state, simulator, addressed=[]
-        )
+    opening_text = conv.opening if conv.opening is not None else DEFAULT_OPENING
+    await _record_agent_turn(
+        engine, session_id, conv, state, opening_text, addressed=[]
+    )
+    await _record_respondent_turn(
+        engine, session_id, conv, state, simulator, addressed=[]
+    )
 
 
 async def _resume_bootstrap(
@@ -496,6 +513,41 @@ async def _compose_with_regen_and_retry(
         text = await _compose_with_retry(llm, regen_ctx, eval_result)
         # Speak verbatim if the second attempt also fails — no third.
     return text
+
+
+async def _recap_with_retry(llm: LLMClient, ctx: TurnContext) -> str:
+    """Retry ``compose_closing_recap`` up to ``_LLM_MAX_ATTEMPTS`` with backoff."""
+    last_exc: BaseException | None = None
+    for attempt in range(_LLM_MAX_ATTEMPTS):
+        try:
+            return await llm.compose_closing_recap(ctx)
+        except Exception as exc:
+            last_exc = exc
+            if attempt < _LLM_MAX_ATTEMPTS - 1:
+                await asyncio.sleep(_LLM_BACKOFF_BASE_SECONDS * (2**attempt))
+                continue
+    raise _LLMRetriesExhausted("compose_closing_recap") from last_exc
+
+
+async def _compose_closing_recap_with_fallback(
+    llm: LLMClient, ctx: TurnContext
+) -> str:
+    """Compose closing recap with retry; fall back to DEFAULT_CLOSING on failure.
+
+    Tries the recap up to twice — once, and once more if the first
+    result fails phrasing. No regen prompting (no `last_phrasing_failure`
+    is threaded back). If both attempts fail phrasing, or the LLM
+    persistently errors, return :data:`DEFAULT_CLOSING` so the session
+    still ends cleanly.
+    """
+    for _attempt in range(2):
+        try:
+            text = await _recap_with_retry(llm, ctx)
+        except _LLMRetriesExhausted:
+            return DEFAULT_CLOSING
+        if not validate_voice_phrasing(text):
+            return text
+    return DEFAULT_CLOSING
 
 
 async def _accumulate(stream: AsyncIterator[str]) -> str:

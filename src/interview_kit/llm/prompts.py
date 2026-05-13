@@ -155,6 +155,27 @@ def build_compose_user_message(
     return "\n".join(lines)
 
 
+def build_closing_recap_user_message(
+    ctx: TurnContext, *, max_transcript_turns: int
+) -> str:
+    """User message for compose_closing_recap — one ≤25-word recap utterance.
+
+    Asks the model to thank the respondent and name 1–2 concrete things
+    they said. Reuses the same cached system prompt as evaluate /
+    compose so no second cache key is introduced.
+    """
+    transcript = format_transcript_window(ctx.transcript, max_transcript_turns)
+    return (
+        "The conversation so far:\n"
+        f"{transcript}\n\n"
+        "The interview is now wrapping. Write a single closing utterance "
+        "that (a) thanks the respondent and (b) names one or two "
+        "concrete things they said. Follow the voice phrasing rules: one "
+        "utterance, 25 words or fewer, no question. Output only the "
+        "utterance text, no preamble."
+    )
+
+
 def build_extract_user_message(transcript: list[Turn]) -> str:
     """User message for derive_extract — full transcript + structured tool call."""
     formatted = format_full_transcript(transcript)

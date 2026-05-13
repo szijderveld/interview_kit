@@ -43,6 +43,7 @@ import anthropic
 from pydantic import BaseModel, ConfigDict, Field
 
 from interview_kit.llm.prompts import (
+    build_closing_recap_user_message,
     build_compose_user_message,
     build_evaluate_user_message,
     build_extract_user_message,
@@ -191,6 +192,23 @@ class AnthropicLLMClient:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         self.last_compose_usage = _usage_from_response(final, elapsed_ms)
 
+    async def compose_closing_recap(self, ctx: TurnContext) -> str:
+        system = build_system_prompt(ctx.conversation)
+        user = build_closing_recap_user_message(
+            ctx, max_transcript_turns=self._max_transcript_turns
+        )
+        start = time.monotonic()
+        response = await self._client.messages.create(
+            model=self._compose_model,
+            max_tokens=512,
+            system=cast(Any, _cached_system_blocks(system)),
+            messages=cast(Any, [{"role": "user", "content": user}]),
+        )
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        text = _first_text_block(response.content)
+        self.last_compose_usage = _usage_from_response(response, elapsed_ms)
+        return text
+
     async def derive_extract(
         self, transcript: list[Turn], conv: Conversation
     ) -> Extract:
@@ -243,6 +261,19 @@ def _cached_system_blocks(text: str) -> list[dict[str, Any]]:
             "cache_control": {"type": "ephemeral"},
         }
     ]
+
+
+def _first_text_block(content: list[Any]) -> str:
+    """Return the text of the first ``text`` content block.
+
+    Any: ``content`` items are the SDK's union of TextBlock / ToolUseBlock
+    types; we duck-type ``.type`` and ``.text`` rather than importing
+    version-specific block classes.
+    """
+    for block in content:
+        if getattr(block, "type", None) == "text":
+            return str(getattr(block, "text", "")).strip()
+    raise RuntimeError("no text block in Anthropic response")
 
 
 def _first_tool_use(content: list[Any], name: str) -> Any:
