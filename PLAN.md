@@ -1502,7 +1502,7 @@ and PyPI metadata`.
 
 ### Step 19: Ergonomic constructors — `Conversation.from_yaml` and `Engine.with_defaults`
 
-- [ ] complete
+- [x] complete
 
 **Goal:** Shrink the first-time-user code path from ~30 lines of
 Pydantic wiring to ~5 lines. Two helpers, both additive.

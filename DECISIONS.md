@@ -718,3 +718,28 @@ plan review. They are binding for all subsequent steps.
   file may not be bundled in the sdist.
 - **Affects:** future bumps to the LICENSE filename must update this
   field; do not remove it when reorganizing project metadata.
+
+## Step 19 — `create_conversation` accepts `max_tangent_followups` and `max_total_turns`
+
+- **Decision:** Added optional `max_tangent_followups` and `max_total_turns`
+  kwargs (with the same defaults as `Conversation`) to
+  `Engine.create_conversation`.
+- **Why:** The documented Step-19 quickstart unpacks
+  `Conversation.from_yaml(...).model_dump(exclude={"id"})` into
+  `create_conversation`. Without these kwargs, any YAML setting non-default
+  turn budgets would raise `TypeError`. Pure addition; existing callers
+  continue to work unchanged.
+- **Affects:** Step 20's CLI `simulate` subcommand can rely on YAML-supplied
+  turn budgets flowing through `create_conversation` unchanged.
+
+## Step 19 — `pyyaml` added to core dependencies, not an extra
+
+- **Decision:** `pyyaml>=6,<7` is in `[project].dependencies`, not behind a
+  `[yaml]` optional-dependency group. `types-PyYAML` lives in dev only.
+- **Why:** `Conversation.from_yaml` is an advertised public helper; gating
+  it behind an extra creates a "pip install interview-kit[yaml]" footgun
+  for the headline quickstart. pyyaml is small, ubiquitous, and pure
+  Python — the cost of adding it to the base install is negligible.
+- **Affects:** Step 20's CLI and Step 21's README can assume YAML loading
+  is available without an extras hint. Any future YAML schema changes
+  remain breaking under the package's stability contract.

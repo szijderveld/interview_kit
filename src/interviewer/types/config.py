@@ -5,8 +5,10 @@ Frozen Pydantic models. Mutate only via ``model_copy(update={...})``.
 
 from __future__ import annotations
 
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PersonaStyle = Literal["warm", "neutral", "terse"]
@@ -84,6 +86,22 @@ class Conversation(BaseModel):
 
         _check_no_cycles(self.goals)
         return self
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Conversation:
+        """Build a Conversation from a plain dict (e.g. parsed YAML/JSON)."""
+        return cls.model_validate(data)
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> Conversation:
+        """Load a Conversation from a YAML file on disk."""
+        with Path(path).open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"YAML at {path!s} must be a mapping at the top level, got {type(data).__name__}"
+            )
+        return cls.from_dict(data)
 
 
 def _check_no_cycles(goals: list[Goal]) -> None:

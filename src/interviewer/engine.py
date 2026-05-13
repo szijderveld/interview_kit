@@ -14,6 +14,7 @@ Per D5, ``goal_status_changed`` events are only emitted at completion
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -56,6 +57,34 @@ class Engine:
         self.llm = llm
         self.livekit = livekit
 
+    @classmethod
+    def with_defaults(
+        cls, *, anthropic_api_key: str | None = None
+    ) -> Engine:
+        """Build an Engine wired with in-memory store, in-memory sink, and Anthropic LLM.
+
+        Reads ``ANTHROPIC_API_KEY`` from the environment when
+        ``anthropic_api_key`` is ``None``. Raises ``ValueError`` if neither
+        is set. Voice setups (``livekit=...``) go through the full
+        constructor.
+        """
+        # Local imports keep the default-impl modules off the cold-start
+        # path for callers that supply their own store/sink/llm.
+        from interviewer.llm.anthropic import AnthropicLLMClient
+        from interviewer.sinks.memory import InMemoryEventSink
+        from interviewer.stores.memory import InMemoryConversationStore
+
+        key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            raise ValueError(
+                "Engine.with_defaults requires anthropic_api_key or ANTHROPIC_API_KEY env var"
+            )
+        return cls(
+            store=InMemoryConversationStore(),
+            events=InMemoryEventSink(),
+            llm=AnthropicLLMClient(api_key=key),
+        )
+
     # ---- conversation lifecycle ------------------------------------------
 
     async def create_conversation(
@@ -67,6 +96,8 @@ class Engine:
         goals: list[Goal],
         opening: str | None = None,
         closing: str | None = None,
+        max_tangent_followups: int = 2,
+        max_total_turns: int = 80,
     ) -> Conversation:
         """Persist a Conversation. Emits no event — config, not session, action."""
         conv = Conversation(
@@ -77,6 +108,8 @@ class Engine:
             goals=goals,
             opening=opening,
             closing=closing,
+            max_tangent_followups=max_tangent_followups,
+            max_total_turns=max_total_turns,
         )
         await self.store.save_conversation(conv)
         return conv
