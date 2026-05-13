@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
-authors = [{ name = "szijderveld", email = "szijderveld9@gmail.com" }]
+authors = [{ name = "szijderveld", email = "szijderveld@gmail.com" }]
 keywords = ["interview", "voice-agent", "livekit", "anthropic", "llm"]
 classifiers = [
     "Development Status :: 4 - Beta",
