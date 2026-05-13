@@ -7,6 +7,11 @@
   `clarify`, `example`, `importance`, `contrast`, `elaborate`). The
   compose prompt branches on `probe_kind` to ask materially different
   follow-ups. `retry` is unchanged.
+- Added `EvalResult.clarity` (`clear` / `hedged` / `vague`, default
+  `clear`). The runner now overrides a non-resolving `next_action` to
+  a `probe_clarify` when the model reports a hedged or vague answer,
+  capped at once per goal. Internal loop signal only — not surfaced
+  on `GoalStatus` or `Extract`.
 
 ## 0.2.0
 

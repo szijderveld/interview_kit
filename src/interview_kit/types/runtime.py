@@ -20,6 +20,7 @@ GoalStatusValue = Literal["pending", "meets", "partial", "skipped_redundant", "g
 EvalGoalStatusValue = Literal["pending", "meets", "partial", "gave_up"]
 NextAction = Literal["advance", "retry", "probe", "close"]
 ProbeKind = Literal["clarify", "example", "importance", "contrast", "elaborate"]
+ClarityValue = Literal["clear", "hedged", "vague"]
 Speaker = Literal["agent", "respondent"]
 
 
@@ -151,6 +152,7 @@ class EvalResult(BaseModel):
     interesting_tangent: str | None = None
     next_action: NextAction
     probe_kind: ProbeKind | None = None
+    clarity: ClarityValue = "clear"
     rationale: str = ""
 
     @model_validator(mode="after")

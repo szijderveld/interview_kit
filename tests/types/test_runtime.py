@@ -296,6 +296,29 @@ def test_eval_result_probe_with_kind_round_trip() -> None:
     assert EvalResult.model_validate_json(er.model_dump_json()) == er
 
 
+def test_eval_result_clarity_defaults_clear() -> None:
+    er = EvalResult(active_goal_status="meets", next_action="advance")
+    assert er.clarity == "clear"
+
+
+def test_eval_result_clarity_round_trip() -> None:
+    er = EvalResult(
+        active_goal_status="partial",
+        next_action="advance",
+        clarity="hedged",
+    )
+    assert EvalResult.model_validate_json(er.model_dump_json()) == er
+
+
+def test_eval_result_rejects_unknown_clarity() -> None:
+    with pytest.raises(ValidationError):
+        EvalResult(
+            active_goal_status="pending",
+            next_action="advance",
+            clarity="wishy-washy",  # type: ignore[arg-type]
+        )
+
+
 # ---------- SessionEvent ----------------------------------------------------
 
 

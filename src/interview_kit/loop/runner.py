@@ -201,6 +201,7 @@ async def run_loop(
                     raise LoopFailure("evaluate_turn persistent failure") from exc
                 _accumulate_eval_usage(state, engine.llm)
                 _apply_eval(state, last_active, last_eval)
+                last_eval = _maybe_force_clarify(state, last_active, last_eval)
                 if last_eval.next_action == "close":
                     break
 
@@ -217,6 +218,7 @@ async def run_loop(
             if last_active is None or active.id != last_active.id:
                 state.retries_used_on_active = 0
                 state.refusal_count_on_active = 0
+                state.clarify_used_on_active = 0
 
         transcript = await engine.store.list_turns(session_id)
         compose_ctx = _build_ctx(conv, transcript, state, active)
@@ -333,6 +335,9 @@ class _RunnerState:
         # when (a) the active goal changes, or (b) a non-refusal respondent
         # turn breaks the streak.
         self.refusal_count_on_active: int = 0
+        # Per-goal cap on the hedge-driven clarify override (Step 25). Reset
+        # on goal change so each goal gets at most one forced clarify probe.
+        self.clarify_used_on_active: int = 0
         # D11: aggregated across every successful ``evaluate_turn`` call.
         # Emitted on the ``completed`` event payload.
         self.eval_usage_totals: dict[str, int] = dict(_ZERO_USAGE)
@@ -458,6 +463,36 @@ def _apply_eval(
     elif eval_result.next_action == "probe":
         state.tangent_followups_used += 1
     # advance / close: no in-place counter change. retries reset on goal change.
+
+
+def _maybe_force_clarify(
+    state: _RunnerState, active: Goal, eval_result: EvalResult
+) -> EvalResult:
+    """Override ``next_action`` to a clarify probe when the answer was hedged.
+
+    Fires at most once per active goal (cap via
+    ``state.clarify_used_on_active``). Skipped when the eval already
+    resolved the goal (``meets`` / ``gave_up``) or already routed to
+    close. Bumps ``tangent_followups_used`` to mirror the natural
+    ``next_action == "probe"`` path in :func:`_apply_eval`.
+    """
+    if eval_result.clarity not in ("hedged", "vague"):
+        return eval_result
+    if state.clarify_used_on_active >= 1:
+        return eval_result
+    current_status = state.goal_status_table[active.id].status
+    if current_status in ("meets", "gave_up"):
+        return eval_result
+    if eval_result.next_action == "close":
+        return eval_result
+    state.clarify_used_on_active += 1
+    # Mirror _apply_eval's probe accounting only when the original
+    # action wasn't already a probe (which already bumped the counter).
+    if eval_result.next_action != "probe":
+        state.tangent_followups_used += 1
+    return eval_result.model_copy(
+        update={"next_action": "probe", "probe_kind": "clarify"}
+    )
 
 
 class _LLMRetriesExhausted(Exception):

@@ -292,6 +292,25 @@ def test_compose_user_message_probe_shape_per_kind(
     assert expected_substring in msg
 
 
+def test_evaluate_user_message_describes_hedge_language() -> None:
+    conv = _conv()
+    ctx = TurnContext(
+        conversation=conv,
+        transcript=[_turn(0, "respondent", "a")],
+        active_goal=conv.goals[0],
+        goal_statuses=[],
+        retries_used_on_active=0,
+        tangent_followups_used=0,
+        total_turns=1,
+    )
+    msg = build_evaluate_user_message(ctx, max_transcript_turns=12)
+    assert "hedge" in msg.lower()
+    for hedge in ("I guess", "maybe", "I think", "sort of"):
+        assert hedge in msg
+    for level in ("clear", "hedged", "vague"):
+        assert level in msg
+
+
 def test_evaluate_user_message_lists_probe_kinds() -> None:
     conv = _conv()
     ctx = TurnContext(

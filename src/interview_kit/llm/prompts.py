@@ -117,6 +117,16 @@ _PROBE_KIND_GUIDE = (
 )
 
 
+_CLARITY_GUIDE = (
+    "Also assess the respondent's clarity by reading hedge language "
+    '("I guess", "kind of", "maybe", "I think", "probably", "sort of") '
+    "and answer length / specificity. Set `clarity`:\n"
+    "- clear: concrete, no hedges.\n"
+    "- hedged: some hedges, partial specificity.\n"
+    "- vague: mostly hedges or platitudes; little concrete content."
+)
+
+
 _PROBE_KIND_SHAPES: dict[str, str] = {
     "clarify": (
         "Ask the respondent to restate or define what they meant — pick the "
@@ -140,6 +150,7 @@ def build_evaluate_user_message(ctx: TurnContext, *, max_transcript_turns: int) 
         f"The active goal is: {ctx.active_goal.id} — {ctx.active_goal.intent}\n"
         "The respondent's most recent answer is the final RESPONDENT turn above.\n\n"
         f"{_PROBE_KIND_GUIDE}\n\n"
+        f"{_CLARITY_GUIDE}\n\n"
         "Call the `evaluate` tool with your assessment."
     )
 
