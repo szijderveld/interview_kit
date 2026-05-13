@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0
 
 - **Breaking:** `EvalResult.next_action` no longer accepts `"drill"`;
   use `"probe"` together with a required `probe_kind` (one of
